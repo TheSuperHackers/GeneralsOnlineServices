@@ -445,7 +445,7 @@ namespace GenOnlineService
 				g_Discord = new DiscordBot();
 			}
 
-			GlobalDatabaseInstance.g_Database.Initialize();
+			GlobalDatabaseInstance.g_Database.Initialize(builder);
 
 			// do a cleanup on startup
 			DoCleanup(true);

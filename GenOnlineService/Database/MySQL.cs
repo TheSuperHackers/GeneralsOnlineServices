@@ -23,6 +23,7 @@ using Discord;
 using GenOnlineService;
 using GenOnlineService.Controllers;
 using Microsoft.AspNetCore.Connections.Features;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using MySql.Data.MySqlClient;
 using MySqlX.XDevAPI;
@@ -35,6 +36,7 @@ using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.WebSockets;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -47,6 +49,109 @@ using System.Threading.Tasks;
 using static Database.Functions;
 using static Database.Functions.Auth;
 using static Database.Functions.Lobby;
+
+public class AppDbContext : DbContext
+{
+	public DbSet<User> Users => Set<User>();
+
+	public AppDbContext(DbContextOptions<AppDbContext> options)
+		: base(options)
+	{
+	}
+
+	protected override void OnModelCreating(ModelBuilder modelBuilder)
+	{
+		// Fluent configuration here
+		base.OnModelCreating(modelBuilder);
+
+		// Fluent config for user
+		modelBuilder.Entity<User>(entity =>
+		{
+			entity.ToTable("users");
+
+			entity.Property(e => e.ID).HasColumnName("user_id");
+
+			entity.Property(e => e.AccountType).HasColumnName("account_type");
+			entity.Property(e => e.SteamID).HasColumnName("steam_id");
+			entity.Property(e => e.DiscordID).HasColumnName("discord_id");
+			entity.Property(e => e.DiscordUsername).HasColumnName("discord_username").HasColumnType("varchar(32)"); ;
+			entity.Property(e => e.GameReplaysID).HasColumnName("gamereplays_id");
+			entity.Property(e => e.GameReplaysUsername).HasColumnName("gamereplays_username").HasColumnType("varchar(32)"); ;
+			entity.Property(e => e.DisplayName).HasColumnName("displayname").HasColumnType("varchar(32)"); ;
+			entity.Property(e => e.LastLogin).HasColumnName("lastlogin").HasColumnType("datetime(6)");
+			entity.Property(e => e.LastIPAddress).HasColumnName("last_ip").HasColumnType("varchar(45)"); ;
+			entity.Property(e => e.ClientID).HasColumnName("client_id");
+			entity.Property(e => e.FavoriteColor).HasColumnName("favorite_color");
+			entity.Property(e => e.FavoriteSide).HasColumnName("favorite_side");
+			entity.Property(e => e.FavoriteMap).HasColumnName("favorite_map").HasColumnType("varchar(128)"); ;
+			entity.Property(e => e.FavoriteStartingMoney).HasColumnName("favorite_starting_money");
+			entity.Property(e => e.LimitSuperweapons).HasColumnName("favorite_limit_superweapons");
+			entity.Property(e => e.IsAdmin).HasColumnName("admin");
+			entity.Property(e => e.IsBanned).HasColumnName("banned");
+			entity.Property(e => e.EloRating).HasColumnName("elo_rating");
+			entity.Property(e => e.EloNumberOfMatches).HasColumnName("elo_num_matches");
+			entity.Property(e => e.BanReason).HasColumnName("ban_reason").HasColumnType("varchar(128)"); ;
+			entity.Property(e => e.BannedBy).HasColumnName("banned_by").HasColumnType("varchar(50)"); ;
+			entity.Property(e => e.BanVerifiedBy).HasColumnName("ban_verified_by").HasColumnType("varchar(50)"); ;
+			entity.Property(e => e.BanAliases).HasColumnName("ban_alises").HasColumnType("varchar(50)"); ;
+		});
+	}
+}
+
+public enum EAccountType
+{
+	Unknown = -1,
+	Steam = 0,
+	Discord = 1,
+	Reserved = 2,
+	Reserved2 = 3,
+	GameReplays = 4,
+}
+
+public class User
+{
+	public Int64 ID { get; set; }
+	public EAccountType AccountType { get; set; } = EAccountType.Unknown;
+
+	// Steam, only present if AccountType is Steam
+	public Int64 SteamID { get; set; } = -1;
+
+	// Discord, only present if AccountType is Discord
+	public Int64 DiscordID { get; set; } = -1;
+	public string DiscordUsername { get; set; } = String.Empty;
+
+	// GameReplays, only present if AccountType is GameReplays
+	public Int64 GameReplaysID { get; set; } = -1;
+	public string GameReplaysUsername { get; set; } = String.Empty;
+
+
+	public string DisplayName { get; set; } = "";
+	public DateTime LastLogin { get; set; } = DateTime.UnixEpoch;
+	public string LastIPAddress { get; set; } = String.Empty;
+	public int ClientID { get; set; } = -1;
+
+	// Gameplay Favorites
+	public int FavoriteColor { get; set; } = -1;
+	public int FavoriteSide { get; set; } = -1;
+	public string FavoriteMap { get; set; } = String.Empty;
+	public int FavoriteStartingMoney { get; set; } = -1;
+	public bool LimitSuperweapons { get; set; } = false;
+
+	// User Permissions
+	public bool IsAdmin { get; set; } = false;
+	public bool IsBanned { get; set; } = false;
+
+	// ELO
+	public int EloRating { get; set; } = EloConfig.BaseRating;
+	public int EloNumberOfMatches { get; set; } = 0;
+
+	// Bans
+	public string BanReason { get; set; } = String.Empty;
+	public string BannedBy{ get; set; } = String.Empty;
+	public string BanVerifiedBy { get; set; } = String.Empty;
+	public string BanAliases { get; set; } = String.Empty;
+}
+
 
 public class DailyStats
 {
@@ -1893,7 +1998,7 @@ namespace Database
 			await m_Inst.Query("SELECT * FROM users LIMIT 1", null);
 		}
 
-		public bool Initialize(bool bIsStartup = true)
+		public bool Initialize(WebApplicationBuilder builder, bool bIsStartup = true)
 		{
 			if (Program.g_Config == null)
 			{
@@ -1912,6 +2017,13 @@ namespace Database
 			string? username = dbSettings.GetValue<string>("db_username");
 			string? password = dbSettings.GetValue<string>("db_password");
 			UInt16? port = dbSettings.GetValue<UInt16>("db_port");
+
+			int? db_min_poolsize = dbSettings.GetValue<int>("db_min_poolsize");
+			int? db_max_poolsize = dbSettings.GetValue<int>("db_max_poolsize");
+			bool? db_use_pooling = dbSettings.GetValue<bool>("db_use_pooling");
+			bool? db_conn_reset = dbSettings.GetValue<bool>("db_conn_reset");
+			int? db_connect_timeout = dbSettings.GetValue<int>("db_connect_timeout");
+			int? db_command_timeout = dbSettings.GetValue<int>("db_command_timeout");
 
 			if (hostname == null)
 			{
@@ -1942,6 +2054,32 @@ namespace Database
 			if (!Directory.Exists("Exceptions"))
 			{
 				Directory.CreateDirectory("Exceptions");
+			}
+
+			// TODO_EFCORE: Use more config params here
+			// EFCore connect
+			{
+				//var builder = WebApplication.CreateBuilder(args);
+
+				var csb = new MySqlConnectionStringBuilder
+				{
+					Server = hostname,
+					Port = (uint)port,
+					Database = dbname,
+					UserID = username,
+					Password = password,
+					ConnectionTimeout = (uint)db_connect_timeout,
+					DefaultCommandTimeout = (uint)db_command_timeout,
+					SslMode = MySqlSslMode.Preferred
+				};
+
+				builder.Services.AddDbContext<AppDbContext>(options =>
+				{
+					options.UseMySql(
+						csb.ConnectionString,
+						ServerVersion.AutoDetect(csb.ConnectionString));
+				});
+
 			}
 
 			try
@@ -2160,7 +2298,7 @@ namespace Database
 
 						File.WriteAllText(Path.Combine("Exceptions", "MYSQL_2_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".txt"), "MySQL Query Error:" + strExceptionMsg);
 
-						Initialize(false);
+						Initialize(null, false);
 						// Ensure semaphore is released before recursive call
 						if (semaphoreAcquired)
 						{
