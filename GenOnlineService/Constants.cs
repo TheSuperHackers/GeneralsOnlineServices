@@ -634,7 +634,7 @@ namespace GenOnlineService
 		}
 		
 		// TODO_CACHE: Size limit this?
-		Queue<byte[]> m_lstPendingWebsocketSends = new Queue<byte[]>();
+		ConcurrentQueue<byte[]> m_lstPendingWebsocketSends = new ConcurrentQueue<byte[]>();
 
 		public void NotifyFriendslistDirty()
 		{
