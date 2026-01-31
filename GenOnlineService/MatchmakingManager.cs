@@ -948,7 +948,6 @@ static class MatchmakingManager
                 new PlaylistMap("[RANK] Drallim Desert ZH v2", "[RANK] Drallim Desert ZH v2", true, 2),
                 new PlaylistMap("[RANK] Farmlands of the Fallen ZH v1", "[RANK] Farmlands of the Fallen ZH v1", true, 2),
                 new PlaylistMap("[RANK] Sakura Forest II ZH v1", "[RANK] Sakura Forest II ZH v1", true, 2),
-                new PlaylistMap("[RANK] Snowy Drought ZH v5", "[RANK] Snowy Drought ZH v5", true, 2),
                 new PlaylistMap("[RANK] Sovereignty ZH v1", "[RANK] Sovereignty ZH v1", true, 2)
             }
 		) },
