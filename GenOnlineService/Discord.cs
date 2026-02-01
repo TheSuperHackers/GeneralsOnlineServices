@@ -707,15 +707,21 @@ public class DiscordBot
 
 		//1354979004507226294
 
-		// TODO_GITHUB: You should replace the below with your debug key, and also set the environment variable on your server for your release token. These should be different for security purposes.
-#if DEBUG
-		string Token = "TODO_GITHUB";
-#else
-		//string Token = Environment.GetEnvironmentVariable("DISCORD_BOT_TOKEN") ?? "";
-		string Token = "TODO_GITHUB";
-#endif
+		IConfigurationSection? discordSettings = Program.g_Config.GetSection("Discord");
 
-		await discord.LoginAsync(TokenType.Bot, Token).ConfigureAwait(true);
+		if (discordSettings == null)
+		{
+			throw new Exception("Discord section missing in config");
+		}
+
+		string? discordToken = discordSettings.GetValue<string>("token");
+
+		if (discordToken == null)
+		{
+			throw new Exception("Discord Token missing in config");
+		}
+
+		await discord.LoginAsync(TokenType.Bot, discordToken).ConfigureAwait(true);
 		await discord.StartAsync().ConfigureAwait(true);
 #else
 		await Task.Delay(1).ConfigureAwait(true);
