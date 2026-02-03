@@ -218,14 +218,14 @@ namespace GenOnlineService
 		public static string GetDisplayName(ControllerBase controller)
 		{
 			// TODO: Handle not finding claims, it is a critical error
-			var first = controller.User.FindFirst(JwtRegisteredClaimNames.Address);
+			var first = controller.User.FindFirst(JwtRegisteredClaimNames.Name);
 			return first != null ? first.Value : String.Empty;
 		}
 
 		public static string GetIPAddress(ControllerBase controller)
 		{
 			// TODO: Handle not finding claims, it is a critical error
-			var first = controller.User.FindFirst(JwtRegisteredClaimNames.Name);
+			var first = controller.User.FindFirst(JwtRegisteredClaimNames.Address);
 			return first != null ? first.Value : String.Empty;
 		}
 	}

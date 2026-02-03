@@ -525,11 +525,23 @@ namespace GenOnlineService
 
 		private Int64 m_timeAbandoned = -1;
 
+		private string m_strMiddlewareUserID = String.Empty;
+
 		public string m_client_id = String.Empty;
 		DateTime m_CreateTime = DateTime.Now;
 		public DateTime GetCreationTime()
 		{
 			return m_CreateTime;
+		}
+
+		public void SetMiddlewareID(string strMiddlewareUserID)
+		{
+			m_strMiddlewareUserID = strMiddlewareUserID;
+		}
+
+		public string GetMiddlewareID()
+		{
+			return m_strMiddlewareUserID;
 		}
 
 		public UInt64 GetLatestMatchID()
