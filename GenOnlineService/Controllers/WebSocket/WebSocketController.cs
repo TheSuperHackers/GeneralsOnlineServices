@@ -481,7 +481,7 @@ namespace GenOnlineService.Controllers
 						{
 							await Database.Functions.Lobby.UpdateDisplayName(GlobalDatabaseInstance.g_Database, sourceUserSession.m_UserID, nameChangeRequest.name);
 							sourceUserSession.m_strDisplayName = nameChangeRequest.name;
-							await WebSocketManager.SendRoomMemberListToAllInRoom(sourceUserSession.networkRoomID);
+							await WebSocketManager.MarkRoomMemberListAsDirty(sourceUserSession.networkRoomID);
 						}
 					}
 				}

@@ -41,6 +41,19 @@ namespace GenOnlineService
 
 		public const UInt16 g_DefaultCameraMaxHeight = 310;
 	}
+	public class RoomMember
+	{
+		public RoomMember(Int64 a_UserID, string strName, bool admin)
+		{
+			UserID = a_UserID;
+			Name = strName;
+			IsAdmin = admin;
+		}
+
+		public Int64 UserID { get; set; } = -1;
+		public String Name { get; set; } = String.Empty;
+		public bool IsAdmin { get; set; } = false;
+	}
 
 	public enum EPendingLoginState
 	{
@@ -444,59 +457,60 @@ namespace GenOnlineService
 			}
 		}
 
-		public static async Task SendRoomMemberListToAllInRoom(int roomID)
+		private static ConcurrentList<int> g_lstDirtyNetworkRooms = new();
+		public static async Task TickRoomMemberList()
 		{
-			// need a member list update
-			WebSocketMessage_NetworkRoomMemberListUpdate memberListUpdate = new WebSocketMessage_NetworkRoomMemberListUpdate();
-			memberListUpdate.msg_id = (int)EWebSocketMessageID.NETWORK_ROOM_MEMBER_LIST_UPDATE;
-			memberListUpdate.names = new List<string>();
-			memberListUpdate.ids = new List<Int64>();
-
-			SortedDictionary<Int64, bool> usersAlreadyProcessed = new();
-
-			List<UserSession> lstUsersToSend = new();
-
-			// populate list of everyone in the room
-			foreach (KeyValuePair<Int64, UserSession> sessionData in m_dictUserSessions)
+			foreach (int roomID in g_lstDirtyNetworkRooms)
 			{
-				UserSession sess = sessionData.Value;
-				if (sess.networkRoomID == roomID)
+				
+				// need a member list update
+				WebSocketMessage_NetworkRoomMemberListUpdate memberListUpdate = new WebSocketMessage_NetworkRoomMemberListUpdate();
+				memberListUpdate.msg_id = (int)EWebSocketMessageID.NETWORK_ROOM_MEMBER_LIST_UPDATE;
+				memberListUpdate.members = new();
+
+				SortedDictionary<Int64, bool> usersAlreadyProcessed = new();
+
+				List<UserSession> lstUsersToSend = new();
+
+				// populate list of everyone in the room
+				foreach (KeyValuePair<Int64, UserSession> sessionData in m_dictUserSessions)
 				{
-					if (!usersAlreadyProcessed.ContainsKey(sess.m_UserID))
+					UserSession sess = sessionData.Value;
+					if (sess.networkRoomID == roomID)
 					{
-						usersAlreadyProcessed[sess.m_UserID] = true;
-
-						// add to member list
-
-						// flag staff accounts
-						if (sess.IsAdmin())
+						if (!usersAlreadyProcessed.ContainsKey(sess.m_UserID))
 						{
-							memberListUpdate.names.Add(String.Format("[\u2605\u2605GO STAFF\u2605\u2605] {0}", sess.m_strDisplayName));
-						}
-						else
-						{
-							memberListUpdate.names.Add(sess.m_strDisplayName);
-						}
+							usersAlreadyProcessed[sess.m_UserID] = true;
 
-							memberListUpdate.ids.Add(sess.m_UserID);
+							// add to member list
+							string strDisplayName = sess.IsAdmin() ? String.Format("[\u2605\u2605GO STAFF\u2605\u2605] {0}", sess.m_strDisplayName) : sess.m_strDisplayName;
+							memberListUpdate.members.Add(new RoomMember(sess.m_UserID, strDisplayName, sess.IsAdmin()));
 
-						// also add to list of users who need this update, since they were in there
-						UserSession? targetWS = WebSocketManager.GetDataFromUser(sess.m_UserID);
-						if (targetWS != null)
-						{
-							lstUsersToSend.Add(targetWS);
+							// also add to list of users who need this update, since they were in there
+							UserSession? targetWS = WebSocketManager.GetDataFromUser(sess.m_UserID);
+							if (targetWS != null)
+							{
+								lstUsersToSend.Add(targetWS);
+							}
 						}
 					}
 				}
+
+				byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(memberListUpdate));
+
+				// now send to everyone in the room
+				foreach (UserSession sess in lstUsersToSend)
+				{
+					sess.QueueWebsocketSend(bytesJSON);
+				}
 			}
 
-			byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(memberListUpdate));
+			g_lstDirtyNetworkRooms.Clear();
+		}
 
-			// now send to everyone in the room
-			foreach (UserSession sess in lstUsersToSend)
-			{
-				sess.QueueWebsocketSend(bytesJSON);
-			}
+		public static async Task MarkRoomMemberListAsDirty(int roomID)
+		{
+			g_lstDirtyNetworkRooms.Add(roomID);
 		}
 	}
 
@@ -742,13 +756,13 @@ namespace GenOnlineService
 			// update the room roster they left
 			if (oldRoom >= 0) // only if they werent in the dummy room before
 			{
-				await WebSocketManager.SendRoomMemberListToAllInRoom(oldRoom);
+				await WebSocketManager.MarkRoomMemberListAsDirty(oldRoom);
 			}
 
 			// send update to joiner + everyone in new room already
 			if (newRoomID >= 0) // only if they actually joined a room and weren't going to the dummy room
 			{
-				await WebSocketManager.SendRoomMemberListToAllInRoom(newRoomID);
+				await WebSocketManager.MarkRoomMemberListAsDirty(newRoomID);
 			}
 
 			// make the client force refresh list too
@@ -2071,8 +2085,7 @@ namespace GenOnlineService
 
 	public class WebSocketMessage_NetworkRoomMemberListUpdate : WebSocketMessage
 	{
-		public List<string>? names { get; set; }
-		public List<Int64>? ids { get; set; }
+		public List<RoomMember> members { get; set; } = new();
 	}
 
 	public class WebSocketMessage_CurrentLobbyUpdate : WebSocketMessage

@@ -977,7 +977,7 @@ namespace GenOnlineService
 		public EPlayerType SlotState { get; private set; } = 0;
 		public UInt16 SlotIndex { get; private set; } = 0;
 		public string Region { get; private set; } = "Unknown";
-		public string MiddlewareUserID { get; private set; } = null;
+		public string MiddlewareUserID { get; private set; } = String.Empty;
 
 		[JsonIgnore] // cant serialize refs
 		private WeakReference<Lobby?> CurrentLobby = new(null);
@@ -1006,7 +1006,15 @@ namespace GenOnlineService
 			SlotState = SlotState_in;
 			SlotIndex = SlotIndex_in;
 
-			MiddlewareUserID = owningSession.GetMiddlewareID();
+			// default slots are created with null
+			if (owningSession != null)
+			{
+				MiddlewareUserID = owningSession.GetMiddlewareID();
+			}
+			else
+			{
+				MiddlewareUserID = String.Empty;
+			}
 
 			IsReady = false;
 			Region = owningSession == null ? "Unknown" : owningSession.GetFullContinentName();

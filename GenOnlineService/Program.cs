@@ -803,8 +803,21 @@ namespace GenOnlineService
 				timerTick.Start();
 			}
 
-            // timer to save daily stats
-            {
+			// tick network rooms (done at lower frequency)
+			{
+				System.Timers.Timer timerTick = new System.Timers.Timer(1000); // 1s tick
+				timerTick.AutoReset = false;
+				timerTick.Elapsed += async (sender, e) =>
+				{
+					await WebSocketManager.TickRoomMemberList();
+
+					timerTick.Start();
+				};
+				timerTick.Start();
+			}
+
+			// timer to save daily stats
+			{
                 System.Timers.Timer timerTick = new System.Timers.Timer(60000); // 60s tick
                 timerTick.AutoReset = false;
                 timerTick.Elapsed += async (sender, e) =>
