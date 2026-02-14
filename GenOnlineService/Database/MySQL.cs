@@ -391,7 +391,7 @@ namespace Database
 						}
 					);
 
-				List<MatchdataMemberModel> lstMembers = new List<MatchdataMemberModel>();
+				Dictionary<int, MatchdataMemberModel> lstMembers = new Dictionary<int, MatchdataMemberModel>();
 				foreach (var row in res.GetRows())
 				{
 					string? strJson_Slot0 = Convert.ToString(row["member_slot_0"]);
@@ -413,26 +413,26 @@ namespace Database
 					MatchdataMemberModel? member6 = String.IsNullOrEmpty(strJson_Slot6) ? null : JsonSerializer.Deserialize<MatchdataMemberModel>(strJson_Slot6);
 					MatchdataMemberModel? member7 = String.IsNullOrEmpty(strJson_Slot7) ? null : JsonSerializer.Deserialize<MatchdataMemberModel>(strJson_Slot7);
 
-					// add members to collection
-					if (member0 != null) { lstMembers.Add((MatchdataMemberModel)member0); }
-					if (member1 != null) { lstMembers.Add((MatchdataMemberModel)member1); }
-					if (member2 != null) { lstMembers.Add((MatchdataMemberModel)member2); }
-					if (member3 != null) { lstMembers.Add((MatchdataMemberModel)member3); }
-					if (member4 != null) { lstMembers.Add((MatchdataMemberModel)member4); }
-					if (member5 != null) { lstMembers.Add((MatchdataMemberModel)member5); }
-					if (member6 != null) { lstMembers.Add((MatchdataMemberModel)member6); }
-					if (member7 != null) { lstMembers.Add((MatchdataMemberModel)member7); }
+					// add members to collection with slot index as key
+					if (member0 != null) { lstMembers[0] = member0.Value; }
+					if (member1 != null) { lstMembers[1] = member1.Value; }
+					if (member2 != null) { lstMembers[2] = member2.Value; }
+					if (member3 != null) { lstMembers[3] = member3.Value; }
+					if (member4 != null) { lstMembers[4] = member4.Value; }
+					if (member5 != null) { lstMembers[5] = member5.Value; }
+					if (member6 != null) { lstMembers[6] = member6.Value; }
+					if (member7 != null) { lstMembers[7] = member7.Value; }
 				}
 
 				// do we have a winner already?
 				bool bHasWinner = false;
 				int winnerTeam = -1;
-				foreach (MatchdataMemberModel lobbyMember in lstMembers)
+				foreach (var kvp in lstMembers)
 				{
-					if (lobbyMember.won)
+					if (kvp.Value.won)
 					{
 						bHasWinner = true;
-						winnerTeam = lobbyMember.team;
+						winnerTeam = kvp.Value.team;
 						break;
 					}
 				}
@@ -442,19 +442,16 @@ namespace Database
 				{
 					if (winnerTeam != -1)
 					{
-						int slotIndex = 0;
-						foreach (MatchdataMemberModel? lobbyMember in lstMembers)
+						foreach (var kvp in lstMembers)
 						{
-							if (lobbyMember != null)
+							int slotIndex = kvp.Key;
+							MatchdataMemberModel lobbyMember = kvp.Value;
+							
+							if (lobbyMember.team == winnerTeam) // same team, and not '-1'
 							{
-								if (lobbyMember.Value.team == winnerTeam) // same team, and not '-1'
-								{
-									// save it
-									await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
-								}
+								// save it
+								await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
 							}
-
-							++slotIndex;
 						}
 					}
 				}
@@ -465,14 +462,17 @@ namespace Database
 					// pick the last person to leave
 					DateTime mostRecentlyLeftTimestamp = DateTime.UnixEpoch;
 					MatchdataMemberModel? lastPlayerToLeave = null;
-					foreach (MatchdataMemberModel lobbyMember in lstMembers)
+					int lastPlayerSlotIndex = -1;
+					foreach (var kvp in lstMembers)
 					{
+						MatchdataMemberModel lobbyMember = kvp.Value;
 						if (lobbyInst.TimeMemberLeft.ContainsKey(lobbyMember.user_id))
 						{
 							if (lobbyInst.TimeMemberLeft[lobbyMember.user_id] >= mostRecentlyLeftTimestamp)
 							{
 								mostRecentlyLeftTimestamp = lobbyInst.TimeMemberLeft[lobbyMember.user_id];
 								lastPlayerToLeave = lobbyMember;
+								lastPlayerSlotIndex = kvp.Key;
 							}
 						}
 					}
@@ -482,25 +482,22 @@ namespace Database
 						int winningPlayerTeam = lastPlayerToLeave.Value.team;
 
 						// this player + everyone on the same team is also a winner!
-						int slotIndex = 0;
-						foreach (MatchdataMemberModel? lobbyMember in lstMembers)
+						foreach (var kvp in lstMembers)
 						{
-							if (lobbyMember != null)
+							int slotIndex = kvp.Key;
+							MatchdataMemberModel lobbyMember = kvp.Value;
+							
+							// is it this guy?
+							if (lobbyMember.user_id == lastPlayerToLeave.Value.user_id)
 							{
-								// is it this guy?
-								if (lobbyMember.Value.user_id == lastPlayerToLeave.Value.user_id)
-								{
-									// save it
-									await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
-								}
-								else if (winningPlayerTeam != -1 && lobbyMember.Value.team == winningPlayerTeam) // same team, and not '-1'
-								{
-									// save it
-									await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
-								}
+								// save it
+								await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
 							}
-
-							++slotIndex;
+							else if (winningPlayerTeam != -1 && lobbyMember.team == winningPlayerTeam) // same team, and not '-1'
+							{
+								// save it
+								await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
+							}
 						}
 					}
 
