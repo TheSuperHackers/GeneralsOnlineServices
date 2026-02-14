@@ -329,7 +329,6 @@ namespace GenOnlineService
 			{
 				LobbyMember placeholderMember = new LobbyMember(this, null, -1, String.Empty, String.Empty, 0, -1, -1, -1, i < max_players ? EPlayerType.SLOT_OPEN : EPlayerType.SLOT_CLOSED, i, true);
 				Members[i] = placeholderMember;
-				TimeMemberLeft[i] = DateTime.UnixEpoch;
 			}
 		}
 
@@ -596,6 +595,7 @@ namespace GenOnlineService
 			}
 
 			Members[slotIndex] = newMember;
+			TimeMemberLeft[playerSession.m_UserID] = DateTime.UnixEpoch;
 
 			// leave network room we were in
 			playerSession.UpdateSessionNetworkRoom(-1);
@@ -658,7 +658,7 @@ namespace GenOnlineService
 
 			LobbyMember placeholderMember = new LobbyMember(this, null, -1, String.Empty, String.Empty, 0, -1, -1, -1, EPlayerType.SLOT_OPEN, member.SlotIndex, true);
 			Members[member.SlotIndex] = placeholderMember;
-			TimeMemberLeft[member.SlotIndex] = DateTime.Now;
+			TimeMemberLeft[UserID] = DateTime.Now;
 
 			// send signal to disconnect (only if not ingame, ingame we let the client handle it so a service disconnect doesnt end the game)
 			if (State != ELobbyState.INGAME)
