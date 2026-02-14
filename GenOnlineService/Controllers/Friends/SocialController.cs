@@ -260,7 +260,7 @@ namespace GenOnlineService.Controllers
 			}
 
 			// too many friends?
-			const int friendsLimit = 100;
+			const int friendsLimit = 200;
 			UserSession? userData = WebSocketManager.GetDataFromUser(requester_user_id);
 			if (userData.GetSocialContainer().Friends.Count >= friendsLimit)
 			{
