@@ -590,7 +590,7 @@ namespace GenOnlineService
 			if (Helpers.g_dictInitialExeCRCs.ContainsKey(ownerID))
 			{
 				ACExeCRC = Helpers.g_dictInitialExeCRCs[ownerID].ToUpper();
-				Helpers.g_dictInitialExeCRCs.Remove(ownerID);
+				Helpers.g_dictInitialExeCRCs.Remove(ownerID, out string removedCRC);
 			}
 
 			m_socialContainer = socialContainer;
