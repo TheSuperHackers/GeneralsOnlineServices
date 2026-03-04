@@ -171,10 +171,12 @@ namespace GenOnlineService.Controllers
 	public class MatchUpdateController : ControllerBase
 	{
 		private readonly ILogger<LobbiesController> _logger;
+		private readonly LobbyManager _lobbyManager;
 
-		public MatchUpdateController(ILogger<LobbiesController> logger)
+		public MatchUpdateController(LobbyManager lobbyManager, ILogger<LobbiesController> logger)
 		{
 			_logger = logger;
+			_lobbyManager = lobbyManager;
 		}
 
 		[HttpPut]
@@ -221,7 +223,7 @@ namespace GenOnlineService.Controllers
 				if (sourceData != null)
 				{
 					// lobby cant have AI and must have at least 2 human players at some point
-					Lobby? lobby = LobbyManager.GetLobby(sourceData.currentLobbyID);
+					Lobby? lobby = _lobbyManager.GetLobby(sourceData.currentLobbyID);
 					if (lobby == null || !lobby.WasPVPAtStart() || lobby.HadAIAtStart())
 					{
 						Response.StatusCode = (int)HttpStatusCode.NotAcceptable;

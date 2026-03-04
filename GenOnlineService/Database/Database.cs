@@ -61,6 +61,9 @@ public class AppDbContext : DbContext
 {
 	public DbSet<User> Users => Set<User>();
 	public DbSet<DailyStat> DailyStats => Set<DailyStat>();
+	public DbSet<LeaderboardDaily> LeaderboardDaily => Set<LeaderboardDaily>();
+	public DbSet<LeaderboardMonthly> LeaderboardMonthly => Set<LeaderboardMonthly>();
+	public DbSet<LeaderboardYearly> LeaderboardYearly => Set<LeaderboardYearly>();
 
 	public AppDbContext(DbContextOptions<AppDbContext> options)
 		: base(options)

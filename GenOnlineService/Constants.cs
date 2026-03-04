@@ -1908,7 +1908,8 @@ namespace GenOnlineService
 			}
 			else
 			{
-				Lobby? plrLobby = LobbyManager.GetLobby(userData.currentLobbyID);
+				var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+				Lobby? plrLobby = lobbyManager.GetLobby(userData.currentLobbyID);
 
 				if (plrLobby == null)
 				{

@@ -48,10 +48,12 @@ namespace GenOnlineService.Controllers
 	public class MatchReplayController : ControllerBase
 	{
 		private readonly ILogger<LobbiesController> _logger;
+		private readonly LobbyManager _lobbyManager;
 
-		public MatchReplayController(ILogger<LobbiesController> logger)
+		public MatchReplayController(LobbyManager lobbyManager, ILogger<LobbiesController> logger)
 		{
 			_logger = logger;
+			_lobbyManager = lobbyManager;
 		}
 
 		[HttpPut]
@@ -98,7 +100,7 @@ namespace GenOnlineService.Controllers
 					// TODO_QUICKMATCH: We need a way of checking if player is really in a match or not, so they cant just upload all the time, and also dont let them keep uploading replays if they already did, etc
 					
 					// lobby cant have AI and must have at least 2 human players at some point
-					Lobby? lobby = LobbyManager.GetLobby(sourceData.currentLobbyID);
+					Lobby? lobby = _lobbyManager.GetLobby(sourceData.currentLobbyID);
 					if (lobby == null || !lobby.WasPVPAtStart() || lobby.HadAIAtStart())
 					{
 						Response.StatusCode = (int)HttpStatusCode.NotAcceptable;

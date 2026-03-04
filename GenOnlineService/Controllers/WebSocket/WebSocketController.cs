@@ -31,6 +31,13 @@ namespace GenOnlineService.Controllers
 {
 	public class WebSocketController : ControllerBase
 	{
+		private readonly LobbyManager _lobbyManager;
+
+		public WebSocketController(LobbyManager lobbyManager)
+		{
+			_lobbyManager = lobbyManager;
+		}
+
 		private static readonly JsonSerializerOptions JsonOpts = new()
 		{
 			PropertyNameCaseInsensitive = true,
@@ -395,7 +402,7 @@ namespace GenOnlineService.Controllers
 					{
 						bool bReady = data["ready"].GetBoolean();
 
-						Lobby? lobby = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+						Lobby? lobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 						if (lobby != null)
 						{
 							LobbyMember? member = lobby.GetMemberFromUserID(sourceUserSession.m_UserID);
@@ -444,7 +451,7 @@ namespace GenOnlineService.Controllers
 				else if (msgID == EWebSocketMessageID.LOBBY_CHANGE_PASSWORD)
 				{
 					// must be in a lobby
-					Lobby? lobby = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+					Lobby? lobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 					if (lobby != null)
 					{
 						// must be owner too
@@ -463,7 +470,7 @@ namespace GenOnlineService.Controllers
 				else if (msgID == EWebSocketMessageID.LOBBY_REMOVE_PASSWORD)
 				{
 					// must be in a lobby
-					Lobby? lobby = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+					Lobby? lobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 					if (lobby != null)
 					{
 						// must be owner too
@@ -487,7 +494,7 @@ namespace GenOnlineService.Controllers
 					if (chatMessage != null)
 					{
 						// get lobby
-						Lobby? playerLobby = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+						Lobby? playerLobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 
 						if (playerLobby != null)
 						{
@@ -549,7 +556,7 @@ namespace GenOnlineService.Controllers
 					if (sourceUserSession.currentLobbyID != -1)
 					{
 						// must be lobby owner too
-						lobbyInfo = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+						lobbyInfo = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 
 						if (lobbyInfo == null || lobbyInfo.Owner != sourceUserSession.m_UserID)
 						{
@@ -572,7 +579,7 @@ namespace GenOnlineService.Controllers
 					if (sourceUserSession.currentLobbyID != -1)
 					{
 						// must be lobby owner too
-						lobbyInfo = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+						lobbyInfo = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 
 						if (lobbyInfo == null || lobbyInfo.Owner != sourceUserSession.m_UserID)
 						{
@@ -615,7 +622,7 @@ namespace GenOnlineService.Controllers
 					if (sourceUserSession.currentLobbyID != -1)
 					{
 						// must be lobby owner too
-						lobbyInfo = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+						lobbyInfo = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 
 						if (lobbyInfo == null || lobbyInfo.Owner != sourceUserSession.m_UserID)
 						{
@@ -659,7 +666,7 @@ namespace GenOnlineService.Controllers
 					// store response
 					if (fullMeshMsg != null)
 					{
-						Lobby? lobby = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+						Lobby? lobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 						if (lobby != null)
 						{
 							await lobby.StoreFullMeshConnectivityResponse(sourceUserSession.m_UserID, fullMeshMsg.connectivity_map);
@@ -682,7 +689,7 @@ namespace GenOnlineService.Controllers
 						UserSession? targetSession = WebSocketManager.GetDataFromUser(signalingRequest.target_user_id);
 						if (targetSession != null)
 						{
-							Lobby? lobby = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+							Lobby? lobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 
 							if (lobby != null)
 							{
@@ -726,7 +733,7 @@ namespace GenOnlineService.Controllers
 						UserSession? targetSession = WebSocketManager.GetDataFromUser(signal.target_user_id);
 						if (targetSession != null)
 						{
-							Lobby? lobby = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
+							Lobby? lobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 
 							if (lobby != null)
 							{

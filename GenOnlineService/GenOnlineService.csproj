@@ -12,7 +12,12 @@
     <TreatWarningsAsErrors>False</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
+	<ItemGroup>
+		<PackageReference Update="System.Linq.AsyncEnumerable" ExcludeAssets="all" />
+	</ItemGroup>
+
+
+	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <WarningLevel>0</WarningLevel>
     <TreatWarningsAsErrors>False</TreatWarningsAsErrors>
   </PropertyGroup>

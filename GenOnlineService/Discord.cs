@@ -364,7 +364,8 @@ public class DiscordBot
 						}
 						else if (message.Content.ToLower() == "!lobbies")
 						{
-							int numLobbies = LobbyManager.GetNumLobbies();
+							var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+							int numLobbies = lobbyManager.GetNumLobbies();
 							string strMessage = String.Format("There are currently {0} lobbies.", numLobbies);
 
 							if (enumChannelID == EDiscordChannelIDs.DirectMessage)

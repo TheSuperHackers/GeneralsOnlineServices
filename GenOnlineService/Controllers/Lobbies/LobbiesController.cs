@@ -63,9 +63,12 @@ namespace GenOnlineService.Controllers
 		private static List<RoomData>? s_cachedRooms = null;
 		private static readonly object s_roomsLock = new object();
 
-		public LobbiesController(ILogger<LobbiesController> logger)
+		private readonly LobbyManager _lobbyManager;
+
+		public LobbiesController(LobbyManager lobbyManager, ILogger<LobbiesController> logger)
 		{
 			_logger = logger;
+			_lobbyManager = lobbyManager;
 		}
 
 		// Cache rooms.json data to avoid disk I/O on every request
@@ -182,7 +185,7 @@ namespace GenOnlineService.Controllers
 							bIncludeAllNetworkRooms = true;
 						}
 
-							lstLobbies = LobbyManager.GetAllLobbies(networkRoomID, true, true, false, false, bIncludeAllNetworkRooms);
+							lstLobbies = _lobbyManager.GetAllLobbies(networkRoomID, true, true, false, false, bIncludeAllNetworkRooms);
 
 						List<Lobby> lstLobbiesToRemove = new();
 
@@ -252,7 +255,7 @@ namespace GenOnlineService.Controllers
 						networkRoomID = 0;
 						bIncludeAllNetworkRooms = true;
 
-						lstLobbies = LobbyManager.GetAllLobbies(networkRoomID, true, true, true, true, bIncludeAllNetworkRooms);
+						lstLobbies = _lobbyManager.GetAllLobbies(networkRoomID, true, true, true, true, bIncludeAllNetworkRooms);
 					}
 					else
 					{
@@ -364,10 +367,10 @@ namespace GenOnlineService.Controllers
 							if (playerSession != null)
 							{
 								// cleanup any zombie lobbies
-								await LobbyManager.CleanupUserLobbiesNotStarted(user_id);
+								await _lobbyManager.CleanupUserLobbiesNotStarted(user_id);
 
 								string strDisplayName = await Database.Functions.Auth.GetDisplayName(GlobalDatabaseInstance.g_Database, user_id);
-								Int64 newLobbyID = await LobbyManager.CreateLobby(playerSession, strDisplayName, strName, strMapName, strMapPath, bMapOfficial, maxPlayers, strIPAddr,
+								Int64 newLobbyID = await _lobbyManager.CreateLobby(playerSession, strDisplayName, strName, strMapName, strMapPath, bMapOfficial, maxPlayers, strIPAddr,
 									hostPreferredPort, bVanillaTeamsOnly, bTrackStats, starting_cash, bPassworded, strPassword, playerSession.networkRoomID, bAllowObservers, maxCamHeight, exe_crc, ini_crc, ELobbyType.CustomGame);
 
 								if (newLobbyID >= 0)

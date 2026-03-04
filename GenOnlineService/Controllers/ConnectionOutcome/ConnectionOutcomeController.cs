@@ -45,10 +45,12 @@ namespace GenOnlineService.Controllers
 	public class ConnectionOutcomeController : ControllerBase
 	{
 		private readonly ILogger<ConnectionOutcomeController> _logger;
+		private readonly LobbyManager _lobbyManager;
 
-		public ConnectionOutcomeController(ILogger<ConnectionOutcomeController> logger)
+		public ConnectionOutcomeController(LobbyManager lobbyManager, ILogger<ConnectionOutcomeController> logger)
 		{
 			_logger = logger;
+			_lobbyManager = lobbyManager;
 		}
 
 		[HttpPost]
@@ -82,7 +84,7 @@ namespace GenOnlineService.Controllers
 						Int64 source_user = TokenHelper.GetUserID(this);
 						if (source_user != -1)
 						{
-							Lobby? playerLobby = LobbyManager.GetPlayerParticipantLobby(source_user);
+							Lobby? playerLobby = _lobbyManager.GetPlayerParticipantLobby(source_user);
 
 							if (playerLobby != null)
 							{

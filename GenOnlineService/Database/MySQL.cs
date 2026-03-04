@@ -270,127 +270,6 @@ namespace Database
 
 		public static class Leaderboards
 		{
-			public class LeaderboardPoints
-			{
-				public int daily = 0;
-                public int daily_matches = 0;
-                public int monthly = 0;
-                public int monthly_matches = 0;
-                public int yearly = 0;
-                public int yearly_matches = 0;
-            }
-
-			public async static Task<LeaderboardPoints> GetLeaderboardDataForUser(MySQLInstance m_Inst, Int64 playerID, int dayOfYear, int monthOfYear, int year)
-			{
-				LeaderboardPoints retVal = new();
-
-				// daily
-				var resDaily = await m_Inst.Query("SELECT points, wins+losses as `matches` FROM leaderboard_daily WHERE user_id=@user_id AND day_of_year=@day_of_year AND year=@year LIMIT 1;",
-						new()
-						{
-							{ "@user_id", playerID },
-							{ "@day_of_year", dayOfYear },
-							{ "@year", year }
-						}
-					);
-				if (resDaily.NumRows() > 0)
-				{
-					CMySQLRow row = resDaily.GetRow(0);
-					retVal.daily = Convert.ToInt32(row["points"]);
-					retVal.daily_matches = Convert.ToInt32(row["matches"]);
-                }
-
-				// monthly
-				var resMonthly = await m_Inst.Query("SELECT points, wins+losses as `matches` FROM leaderboard_monthly WHERE user_id=@user_id AND month_of_year=@month_of_year AND year=@year LIMIT 1;",
-						new()
-						{
-							{ "@user_id", playerID },
-							{ "@month_of_year", monthOfYear },
-							{ "@year", year }
-						}
-					);
-				if (resMonthly.NumRows() > 0)
-				{
-					CMySQLRow row = resMonthly.GetRow(0);
-					retVal.monthly = Convert.ToInt32(row["points"]);
-                    retVal.monthly_matches = Convert.ToInt32(row["matches"]);
-                }
-
-				// yearly
-				var resYearly = await m_Inst.Query("SELECT points, wins+losses as `matches` FROM leaderboard_yearly WHERE user_id=@user_id AND year=@year LIMIT 1;",
-						new()
-						{
-							{ "@user_id", playerID },
-							{ "@year", year }
-						}
-					);
-				if (resYearly.NumRows() > 0)
-				{
-					CMySQLRow row = resYearly.GetRow(0);
-					retVal.yearly = Convert.ToInt32(row["points"]);
-                    retVal.yearly_matches = Convert.ToInt32(row["matches"]);
-                }
-
-				return retVal;
-			}
-
-			public async static Task<Dictionary<Int64, LeaderboardPoints>> GetBulkLeaderboardData(MySQLInstance m_Inst, List<Int64> playerIDs, int dayOfYear, int monthOfYear, int year)
-			{
-				Dictionary<Int64, LeaderboardPoints> results = new();
-				
-				if (playerIDs == null || playerIDs.Count == 0)
-				{
-					return results;
-				}
-
-				// Initialize all users with default values
-				foreach (Int64 playerId in playerIDs)
-				{
-					results[playerId] = new LeaderboardPoints();
-				}
-
-				// Build IN clause
-				string inClause = string.Join(",", playerIDs);
-
-				// Bulk daily
-				var resDaily = await m_Inst.Query($"SELECT user_id, points, wins+losses as `matches` FROM leaderboard_daily WHERE user_id IN ({inClause}) AND day_of_year={dayOfYear} AND year={year};", null);
-				foreach (var row in resDaily.GetRows())
-				{
-					Int64 userId = Convert.ToInt64(row["user_id"]);
-					if (results.ContainsKey(userId))
-					{
-						results[userId].daily = Convert.ToInt32(row["points"]);
-						results[userId].daily_matches = Convert.ToInt32(row["matches"]);
-					}
-				}
-
-				// Bulk monthly
-				var resMonthly = await m_Inst.Query($"SELECT user_id, points, wins+losses as `matches` FROM leaderboard_monthly WHERE user_id IN ({inClause}) AND month_of_year={monthOfYear} AND year={year};", null);
-				foreach (var row in resMonthly.GetRows())
-				{
-					Int64 userId = Convert.ToInt64(row["user_id"]);
-					if (results.ContainsKey(userId))
-					{
-						results[userId].monthly = Convert.ToInt32(row["points"]);
-						results[userId].monthly_matches = Convert.ToInt32(row["matches"]);
-					}
-				}
-
-				// Bulk yearly
-				var resYearly = await m_Inst.Query($"SELECT user_id, points, wins+losses as `matches` FROM leaderboard_yearly WHERE user_id IN ({inClause}) AND year={year};", null);
-				foreach (var row in resYearly.GetRows())
-				{
-					Int64 userId = Convert.ToInt64(row["user_id"]);
-					if (results.ContainsKey(userId))
-					{
-						results[userId].yearly = Convert.ToInt32(row["points"]);
-						results[userId].yearly_matches = Convert.ToInt32(row["matches"]);
-					}
-				}
-
-				return results;
-			}
-
 			public async static Task DetermineLobbyWinnerIfNotPresent(MySQLInstance m_Inst, GenOnlineService.Lobby lobbyInst)
 			{
 				// NOTE: this works only when you call this function BEFORE updating ELO, as elo will read it all to award points
@@ -518,7 +397,7 @@ namespace Database
 				}
 			}
 
-			public async static Task UpdateLeaderboardAndElo(MySQLInstance m_Inst, GenOnlineService.Lobby lobbyInst)
+			public async static Task UpdateLeaderboardAndElo(AppDbContext db, MySQLInstance m_Inst, GenOnlineService.Lobby lobbyInst)
 			{
 				// must be in a QM
 				if (lobbyInst.LobbyType != ELobbyType.QuickMatch)
@@ -634,11 +513,12 @@ namespace Database
 
                     // initialize data with bulk query (3 queries instead of N*3)
                     List<Int64> userIds = lstMembers.Select(m => m.user_id).ToList();
-                    Dictionary<Int64, LeaderboardPoints> bulkLbData = await GetBulkLeaderboardData(m_Inst, userIds, dayOfYear, monthOfYear, year);
-                    
+
+					var bulkLbData = await Database.Leaderboards.GetBulkLeaderboardData(db, userIds, dayOfYear, monthOfYear, year);
+
                     foreach (MatchdataMemberModel member in lstMembers)
                     {
-                        LeaderboardPoints userLBPoints = bulkLbData[member.user_id];
+                        Database.Leaderboards.LeaderboardPoints userLBPoints = bulkLbData[member.user_id];
                         dictEloData_Daily[member.user_id] = new EloData(userLBPoints.daily, userLBPoints.daily_matches);
                         dictEloData_Monthly[member.user_id] = new EloData(userLBPoints.monthly, userLBPoints.monthly_matches);
                         dictEloData_Yearly[member.user_id] = new EloData(userLBPoints.yearly, userLBPoints.yearly_matches);
@@ -1453,10 +1333,12 @@ namespace Database
 
 				// leave any lobby
 				Console.WriteLine("[Source 2] User {0} Leave Any Lobby", user_id);
-				LobbyManager.LeaveAnyLobby(user_id);
+
+				var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+				lobbyManager.LeaveAnyLobby(user_id);
 
 
-				await LobbyManager.CleanupUserLobbiesNotStarted(user_id);
+				await lobbyManager.CleanupUserLobbiesNotStarted(user_id);
 
 				// remove from any matchmaking
 				if (userData != null)

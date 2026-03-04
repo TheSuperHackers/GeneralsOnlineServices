@@ -332,6 +332,8 @@ namespace GenOnlineService
 			}
 		}
 
+		public event Action<Lobby>? OnLobbyNeedsDestroyed;
+
 		public async Task OnAfterPlayerLeft(Int64 leavingUserID)
 		{
 			// NOTE: By the time this is called, the member is no longer in the members list
@@ -346,7 +348,7 @@ namespace GenOnlineService
 				Console.WriteLine("DeleteLobby: Source A");
 				Console.ForegroundColor = ConsoleColor.Gray;
 
-				await LobbyManager.DeleteLobby(this);
+				OnLobbyNeedsDestroyed?.Invoke(this);
 			}
 			else
 			{
@@ -1105,13 +1107,20 @@ namespace GenOnlineService
 		QuickMatch = 1
 	}
 
-	public static class LobbyManager
+	public class LobbyManager
 	{
-		private static ConcurrentDictionary<Int64, Lobby> m_dictLobbies = new();
+		private ConcurrentDictionary<Int64, Lobby> m_dictLobbies = new();
 
-		private static Int64 m_NextLobbyID = 0;
+		private Int64 m_NextLobbyID = 0;
 
-		public static async Task Cleanup()
+		private readonly IServiceProvider _services;
+
+		public LobbyManager(IServiceProvider services)
+		{
+			_services = services;
+		}
+
+		public async Task Cleanup()
 		{
 			// Remove any lobby that has 0 members and has been around for a bit (enough time for host to join)
 			List<Lobby> lstLobbiesToRemove = new List<Lobby>();
@@ -1136,7 +1145,12 @@ namespace GenOnlineService
             }
 		}
 
-		public static async Task<Int64> CreateLobby(UserSession owningSession, string strOwnerDisplayName, string strName, string strMapName, string strMapPath, bool bMapOfficial, int maxPlayers, string HostIPAddr,
+		private async void HandleLobbyNeedsDestroyed(Lobby lobby)
+		{
+			await DeleteLobby(lobby);
+		}
+
+		public async Task<Int64> CreateLobby(UserSession owningSession, string strOwnerDisplayName, string strName, string strMapName, string strMapPath, bool bMapOfficial, int maxPlayers, string HostIPAddr,
 			UInt16 hostPreferredPort, bool bVanillaTeams, bool bTrackStats, UInt32 default_starting_cash, bool bPassworded, String strPassword, Int16 parentNetworkRoom, bool bAllowObservers,
 			UInt16 maxCamHeight, UInt32 exe_crc, UInt32 ini_crc, ELobbyType lobbyType)
 		{
@@ -1145,7 +1159,7 @@ namespace GenOnlineService
 			await CleanupUserLobbiesNotStarted(owningSession.m_UserID);
 
 			Console.WriteLine("[Source 3] User {0} Leave Any Lobby", owningSession.m_UserID);
-			LobbyManager.LeaveAnyLobby(owningSession.m_UserID);
+			this.LeaveAnyLobby(owningSession.m_UserID);
 
 			int rng_seed = new Random().Next();
 
@@ -1170,6 +1184,11 @@ namespace GenOnlineService
 			Lobby newLobby = new Lobby(newLobbyID, owningSession, strName, ELobbyState.GAME_SETUP, strMapName, strMapPath, bVanillaTeams, starting_cash, bLimitSuperweapons, bTrackStats, bPassworded, strPassword, bMapOfficial, rng_seed, parentNetworkRoom, bAllowObservers, maxCamHeight, exe_crc, ini_crc, maxPlayers, lobbyType);
 			m_dictLobbies[newLobbyID] = newLobby;
 
+			
+
+			// subscribe for self-destruct event
+			newLobby.OnLobbyNeedsDestroyed += HandleLobbyNeedsDestroyed;
+
 			// and join
 			if (lobbyType != ELobbyType.QuickMatch) // quickmatch requires a manual join, because the service creates the lobby for them, so the client knows nothing about it without a manual join
 			{
@@ -1184,7 +1203,7 @@ namespace GenOnlineService
 			return newLobbyID;
 		}
 
-		public static async Task Tick()
+		public async Task Tick()
 		{
 			foreach (var kvPair in m_dictLobbies)
 			{
@@ -1192,7 +1211,7 @@ namespace GenOnlineService
 			}
 		}
 
-		public static async Task<bool> JoinLobby(Lobby lobby, UserSession playerSession, string strDisplayName, UInt16 userPreferredPort, bool bHasMap)
+		public async Task<bool> JoinLobby(Lobby lobby, UserSession playerSession, string strDisplayName, UInt16 userPreferredPort, bool bHasMap)
 		{
 			UserLobbyPreferences? lobbyPrefs = await Database.Functions.Auth.GetUserLobbyPreferences(GlobalDatabaseInstance.g_Database, playerSession.m_UserID);
 
@@ -1205,12 +1224,12 @@ namespace GenOnlineService
 			return false;
 		}
 
-		public static int GetNumLobbies()
+		public int GetNumLobbies()
 		{
 			return m_dictLobbies.Count;
 		}
 
-		public static async Task CleanupUserLobbiesNotStarted(Int64 UserID)
+		public async Task CleanupUserLobbiesNotStarted(Int64 UserID)
 		{
 			List<Lobby> ownedLobbies = GetPlayerOwnedLobbies(UserID);
 			foreach (Lobby ownedLobby in ownedLobbies)
@@ -1222,7 +1241,7 @@ namespace GenOnlineService
 			}
 		}
 
-		public static List<Lobby> GetAllLobbies(Int16 networkRoomID, bool bIncludePassword, bool bAllowInSetup, bool bAllowInGame, bool bAllowCompleted, bool bIncludeAllNetworkRooms)
+		public List<Lobby> GetAllLobbies(Int16 networkRoomID, bool bIncludePassword, bool bAllowInSetup, bool bAllowInGame, bool bAllowCompleted, bool bIncludeAllNetworkRooms)
 		{
 			List<Lobby> listLobbies = new List<Lobby>();
 			foreach (var kvp in m_dictLobbies)
@@ -1269,7 +1288,7 @@ namespace GenOnlineService
 			return listLobbies;
 		}
 
-		public static Lobby? GetLobby(Int64 lobbyID)
+		public Lobby? GetLobby(Int64 lobbyID)
 		{
 			if (m_dictLobbies.TryGetValue(lobbyID, out Lobby? lobby))
 			{
@@ -1279,7 +1298,7 @@ namespace GenOnlineService
 			return null;
 		}
 
-		public static Lobby? GetLobbyFiltered(Int64 lobbyID, bool bIncludePassword, bool bAllowInSetup, bool bAllowInGame, bool bAllowCompleted)
+		public Lobby? GetLobbyFiltered(Int64 lobbyID, bool bIncludePassword, bool bAllowInSetup, bool bAllowInGame, bool bAllowCompleted)
 		{
 			if (m_dictLobbies.TryGetValue(lobbyID, out Lobby? lobby))
 			{
@@ -1317,7 +1336,7 @@ namespace GenOnlineService
 			return null;
 		}
 
-		public static Lobby? GetPlayerParticipantLobby(Int64 userID)
+		public Lobby? GetPlayerParticipantLobby(Int64 userID)
 		{
 			// TODO_LOBBY: Optimize this, maintain a dictionary of userid
 			foreach (Lobby lobbyInst in m_dictLobbies.Values)
@@ -1331,7 +1350,7 @@ namespace GenOnlineService
 			return null;
 		}
 
-		public static List<Lobby> GetPlayerOwnedLobbies(Int64 userID)
+		public List<Lobby> GetPlayerOwnedLobbies(Int64 userID)
 		{
 			// NOTE: This function doesnt account for games in progress, the callee must process those (the owner can have left and orphaned the session if in-game)
 			// TODO_LOBBY: Optimize this, maintain a dictionary of userid
@@ -1347,7 +1366,7 @@ namespace GenOnlineService
 			return lstLobbies;
 		}
 
-		public static async Task LeaveSpecificLobby(Int64 userID, Int64 lobbyID)
+		public async Task LeaveSpecificLobby(Int64 userID, Int64 lobbyID)
 		{
 			Lobby? targetLobby = GetLobby(lobbyID);
 			if (targetLobby != null)
@@ -1361,7 +1380,7 @@ namespace GenOnlineService
 			}
 		}
 
-		public static async Task LeaveAnyLobby(Int64 userID)
+		public async Task LeaveAnyLobby(Int64 userID)
 		{
 			foreach (Lobby lobbyInst in m_dictLobbies.Values)
 			{
@@ -1374,7 +1393,7 @@ namespace GenOnlineService
 			}
 		}
 
-		public static async Task<bool> DeleteLobby(Lobby lobby)
+		public async Task<bool> DeleteLobby(Lobby lobby)
 		{
 			if (lobby.State != ELobbyState.COMPLETE)
 			{
@@ -1392,20 +1411,25 @@ namespace GenOnlineService
 			// only do this once
 			if (bRemoved)
 			{
+				// unsubscribe from self-destruct event
+				lobby.OnLobbyNeedsDestroyed -= HandleLobbyNeedsDestroyed;
+
 				// make sure we have a winner
 				await Database.Functions.Leaderboards.DetermineLobbyWinnerIfNotPresent(GlobalDatabaseInstance.g_Database, lobby);
 
 				// if its a quickmatch, update our leaderboards
 				if (lobby.LobbyType == ELobbyType.QuickMatch)
 				{
-					await Database.Functions.Leaderboards.UpdateLeaderboardAndElo(GlobalDatabaseInstance.g_Database, lobby);
+					using var scope = _services.CreateScope();
+					var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+					await Database.Functions.Leaderboards.UpdateLeaderboardAndElo(db, GlobalDatabaseInstance.g_Database, lobby);
                 }
 			}
 
 			return bRemoved;
 		}
 
-		public static bool IsUserInLobby(Lobby lobby, Int64 user_id)
+		public bool IsUserInLobby(Lobby lobby, Int64 user_id)
 		{
 			LobbyMember? member = lobby.GetMemberFromUserID(user_id);
 			return member != null;

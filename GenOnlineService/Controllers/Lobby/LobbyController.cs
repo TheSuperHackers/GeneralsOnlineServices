@@ -142,10 +142,12 @@ namespace GenOnlineService.Controllers
 	public class LobbyController : ControllerBase
 	{
 		private readonly ILogger<LobbiesController> _logger;
+		private readonly LobbyManager _lobbyManager;
 
-		public LobbyController(ILogger<LobbiesController> logger)
+		public LobbyController(LobbyManager lobbyManager, ILogger<LobbiesController> logger)
 		{
 			_logger = logger;
+			_lobbyManager = lobbyManager;
 		}
 
 		[HttpGet("{lobby_id}")]
@@ -167,7 +169,7 @@ namespace GenOnlineService.Controllers
 					// need a lobby ID
 					if (Int64.TryParse(lobby_id, out Int64 lobbyID))
 					{
-						Lobby? lobby = LobbyManager.GetLobby(lobbyID);
+						Lobby? lobby = _lobbyManager.GetLobby(lobbyID);
 						result.lobby = lobby;
 					}
 
@@ -212,7 +214,7 @@ namespace GenOnlineService.Controllers
 					Int64 user_id = TokenHelper.GetUserID(this);
 					if (user_id != -1)
 					{
-						Lobby? lobby = LobbyManager.GetLobby(lobbyID);
+						Lobby? lobby = _lobbyManager.GetLobby(lobbyID);
 						if (lobby != null)
 						{
 							foreach (var member in lobby.Members)
@@ -228,7 +230,7 @@ namespace GenOnlineService.Controllers
 						}
 
 						Console.WriteLine("[Source 1] User {0} Leave Any Lobby", user_id);
-						LobbyManager.LeaveAnyLobby(user_id);
+						_lobbyManager.LeaveAnyLobby(user_id);
 
 						// cleanup TURN credentials
 						TURNCredentialManager.DeleteCredentialsForUser(user_id);
@@ -382,7 +384,7 @@ namespace GenOnlineService.Controllers
 						Int64 user_id = TokenHelper.GetUserID(this);
 						if (user_id != -1)
 						{
-							Lobby? lobby = LobbyManager.GetLobby(lobbyID);
+							Lobby? lobby = _lobbyManager.GetLobby(lobbyID);
 
 							if (lobby != null)
 							{
@@ -509,7 +511,7 @@ namespace GenOnlineService.Controllers
 										// TODO: we should communicate the kick to the user...
 										Int64 KickedUserID = data["userid"].GetInt64();
 
-										LobbyManager.LeaveSpecificLobby(KickedUserID, lobbyID);
+										_lobbyManager.LeaveSpecificLobby(KickedUserID, lobbyID);
 
 										// cleanup TURN credentials
 										TURNCredentialManager.DeleteCredentialsForUser(KickedUserID);
@@ -668,7 +670,7 @@ namespace GenOnlineService.Controllers
 						)
 					{
 
-						Lobby? lobby = LobbyManager.GetLobby(lobbyID);
+						Lobby? lobby = _lobbyManager.GetLobby(lobbyID);
 
 						if (lobby != null)
 						{
@@ -712,10 +714,10 @@ namespace GenOnlineService.Controllers
 								if (playerSession != null)
 								{
 									// leave any lobby
-									LobbyManager.LeaveAnyLobby(user_id);
+									_lobbyManager.LeaveAnyLobby(user_id);
 
 									string strDisplayName = await Database.Functions.Auth.GetDisplayName(GlobalDatabaseInstance.g_Database, user_id);
-									bool bJoinedSuccessfully = await LobbyManager.JoinLobby(lobby, playerSession, strDisplayName, userPreferredPort, bHasMap);
+									bool bJoinedSuccessfully = await _lobbyManager.JoinLobby(lobby, playerSession, strDisplayName, userPreferredPort, bHasMap);
 
 									result.success = bJoinedSuccessfully;
 

@@ -530,7 +530,7 @@ namespace GenOnlineService
 			// do a cleanup on startup
 			await DoCleanup(true);
 
-
+			builder.Services.AddSingleton<LobbyManager>();
 
 			builder.Services.AddRateLimiter(options =>
 			{
@@ -805,6 +805,7 @@ namespace GenOnlineService
 			});
 
 			var app = builder.Build();
+			ServiceLocator.Services = app.Services;
 
 			app.UseRateLimiter();
 
@@ -855,10 +856,12 @@ namespace GenOnlineService
 				{
 					await WebSocketManager.CheckForTimeouts();
 
-					int numLobbies = LobbyManager.GetNumLobbies();
+					var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+
+					int numLobbies = lobbyManager.GetNumLobbies();
 					await StatsTracker.Update(numLobbies, WebSocketManager.GetUserDataCache().Count);
 
-					await LobbyManager.Cleanup();
+					await lobbyManager.Cleanup();
 				}
 				catch (Exception ex)
 				{
@@ -882,7 +885,8 @@ namespace GenOnlineService
 				{
 					try
 					{
-						await LobbyManager.Tick();
+						var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+						await lobbyManager.Tick();
 						await WebSocketManager.Tick();
 					}
 					catch (Exception ex)
@@ -1071,4 +1075,10 @@ namespace GenOnlineService
 			}
 		}
 	}
+
+	public static class ServiceLocator
+	{
+		public static IServiceProvider Services { get; set; } = default!;
+	}
+
 }

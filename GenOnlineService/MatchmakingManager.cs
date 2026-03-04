@@ -666,6 +666,8 @@ static class MatchmakingManager
 		Int64 m_StartTime = -1;
 		public async Task Tick()
 		{
+			var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+
 			// TODO_QUICKMATCH: What if the playlist is null? is this even possible since we validated before creating the bucket
 			if (g_Playlists.TryGetValue(PlaylistID, out Playlist? playlist))
 			{
@@ -760,7 +762,7 @@ static class MatchmakingManager
 							// make a lobby
 							DetermineMap(out string strMapName, out string strMapPath);
 
-							m_LobbyID = await LobbyManager.CreateLobby(dummyHostUser, dummyHostUser.m_strDisplayName, "Quickmatch Lobby", strMapName, strMapPath + ".map",
+							m_LobbyID = await lobbyManager.CreateLobby(dummyHostUser, dummyHostUser.m_strDisplayName, "Quickmatch Lobby", strMapName, strMapPath + ".map",
 									true, playlist.DesiredPlayers, "", 12345, false, true, 10000, false, String.Empty, -5, false, Constants.g_DefaultCameraMaxHeight, 123, 456, ELobbyType.QuickMatch);
 
 							// tell both to join our lobby
@@ -818,7 +820,7 @@ static class MatchmakingManager
 					if (m_bWaitingOnLobbyJoins)
 					{
 						// done? start time etc
-						Lobby? lobby = LobbyManager.GetLobby(m_LobbyID);
+						Lobby? lobby = lobbyManager.GetLobby(m_LobbyID);
 						if (lobby != null)
 						{
 							if (lobby.NumCurrentPlayers == CurrentMemberCount()) // everyone is in, lets start for real
@@ -891,7 +893,7 @@ static class MatchmakingManager
 							}
 
 							// start match + create placeholder match
-							Lobby? lobby = LobbyManager.GetLobby(m_LobbyID);
+							Lobby? lobby = lobbyManager.GetLobby(m_LobbyID);
 							if (lobby != null)
 							{
 								await lobby.UpdateState(ELobbyState.INGAME);
@@ -1157,6 +1159,7 @@ static class MatchmakingManager
 
 	public static void DeregisterPlayer(UserSession plr)
 	{
+		var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
 		lstSessions.Remove(new WeakReference<UserSession>(plr));
 
 		// TODO_QUICKMATCH: What happens if the game is going to start? we should handle that, right now people probably goto game solo
@@ -1169,7 +1172,7 @@ static class MatchmakingManager
 				if (mmBucket.HasPlayer(plr))
 				{
 					// remove from QM lobby too
-					Lobby? lobby = LobbyManager.GetLobby(mmBucket.GetLobbyID());
+					Lobby? lobby = lobbyManager.GetLobby(mmBucket.GetLobbyID());
 					if (lobby != null)
 					{
 						LobbyMember? lobbyMember = lobby.GetMemberFromUserID(plr.m_UserID);
@@ -1194,6 +1197,6 @@ static class MatchmakingManager
 
 		// leave QM lobby too
 		Console.WriteLine("[Source 4] User {0} Leave Any Lobby", plr.m_UserID);
-		LobbyManager.LeaveAnyLobby(plr.m_UserID);
+		lobbyManager.LeaveAnyLobby(plr.m_UserID);
 	}
 }
