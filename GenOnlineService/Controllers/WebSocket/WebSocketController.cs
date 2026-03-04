@@ -21,6 +21,7 @@ using MaxMind.GeoIP2;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Buffers;
 using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
@@ -67,7 +68,7 @@ namespace GenOnlineService.Controllers
 				return;
 			}
 
-			string ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+			string ipAddress = IPHelpers.NormalizeIP(HttpContext.Connection.RemoteIpAddress?.ToString());
 			string ipContinent = "NA";
 			string ipCountry = "US";
 			double dLongitude = 38.8977; // the whitehouse;
@@ -140,62 +141,17 @@ namespace GenOnlineService.Controllers
 					receiveResult = await webSocket.ReceiveAsync(
 						new ArraySegment<byte>(buffer), cts.Token);
 				}
-				catch (OperationCanceledException ex)
+				catch (OperationCanceledException)
 				{
-					// send a ping
+					// No message received in 30s — send a keep-alive pong and continue waiting
 					wsSess.SendPong();
-
-					{
-						// log it to sentry
-						var customEvent = new SentryEvent
-						{
-							Message = "Websocket Disconnect A:" + ex.ToString(),
-							Level = SentryLevel.Error
-						};
-
-						// Add custom tags
-						customEvent.SetTag("websocket", "error_1");
-						customEvent.SetTag("user_id", wsSess.m_UserID.ToString());
-
-						// Add extra data
-						customEvent.SetExtra("user_id_tag", wsSess.m_UserID);
-
-						// Capture the event
-						SentrySdk.CaptureEvent(customEvent);
-
-						// flush
-						await SentrySdk.FlushAsync();
-					}
-
-					break;
+					continue;
 				}
 				catch (Exception ex)
 				{
 					// Log unexpected errors
 					Console.WriteLine($"WebSocket error: {ex}");
-
-					{
-						// log it to sentry
-						var customEvent = new SentryEvent
-						{
-							Message = "Websocket Disconnect B: " + ex.ToString(),
-							Level = SentryLevel.Error
-						};
-
-						// Add custom tags
-						customEvent.SetTag("websocket", "error_2");
-						customEvent.SetTag("user_id", wsSess.m_UserID.ToString());
-
-						// Add extra data
-						customEvent.SetExtra("user_id_tag", wsSess.m_UserID);
-
-						// Capture the event
-						SentrySdk.CaptureEvent(customEvent);
-
-						// flush
-						await SentrySdk.FlushAsync();
-					}
-
+					SentrySdk.CaptureException(ex);
 					break;
 				}
 
@@ -394,7 +350,7 @@ namespace GenOnlineService.Controllers
 
 						outboundMsg.action = chatMessage.action;
 
-						// send to everyone (minus those who have the chatter blocked)
+						// Serialize once before broadcasting
 						byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outboundMsg));
 
 						// send it to everyone in the same room
@@ -430,7 +386,7 @@ namespace GenOnlineService.Controllers
 					if (data != null && data.ContainsKey("room"))
 					{
 						Int16 roomID = data["room"].GetInt16();
-						sourceUserSession.UpdateSessionNetworkRoom(roomID);
+						await sourceUserSession.UpdateSessionNetworkRoom(roomID);
 					}
 				}
 				else if (msgID == EWebSocketMessageID.NETWORK_ROOM_MARK_READY)
@@ -481,7 +437,7 @@ namespace GenOnlineService.Controllers
 						{
 							await Database.Functions.Lobby.UpdateDisplayName(GlobalDatabaseInstance.g_Database, sourceUserSession.m_UserID, nameChangeRequest.name);
 							sourceUserSession.m_strDisplayName = nameChangeRequest.name;
-							await WebSocketManager.SendRoomMemberListToAllInRoom(sourceUserSession.networkRoomID);
+							await WebSocketManager.MarkRoomMemberListAsDirty(sourceUserSession.networkRoomID);
 						}
 					}
 				}
@@ -557,7 +513,7 @@ namespace GenOnlineService.Controllers
 							outboundMsg.announcement = chatMessage.announcement;
 							outboundMsg.show_announcement_to_host = chatMessage.show_announcement_to_host;
 
-							// send to everyone in lobby
+							// Serialize once before broadcasting
 							byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outboundMsg));
 
 							foreach (LobbyMember lobbyMember in playerLobby.Members)
@@ -630,7 +586,7 @@ namespace GenOnlineService.Controllers
 					}
 
 					// start match + create placeholder match
-					lobbyInfo.UpdateState(ELobbyState.INGAME);
+					await lobbyInfo.UpdateState(ELobbyState.INGAME);
 
 					// simple websocket msg, has no data, so dont even read anything
 
@@ -638,7 +594,7 @@ namespace GenOnlineService.Controllers
 					WebSocketMessage_Simple startCommand = new WebSocketMessage_Simple();
 					startCommand.msg_id = (int)EWebSocketMessageID.START_GAME;
 
-					// send to everyone in lobby
+					// Serialize once before broadcasting
 					byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(startCommand));
 
 					foreach (KeyValuePair<Int64, UserSession> sessionData in WebSocketManager.GetUserDataCache())
@@ -682,7 +638,7 @@ namespace GenOnlineService.Controllers
 					WebSocketMessage_Simple startCommand = new WebSocketMessage_Simple();
 					startCommand.msg_id = (int)EWebSocketMessageID.FULL_MESH_CONNECTIVITY_CHECK_RESPONSE;
 
-					// send to everyone in lobby
+					// Serialize once before broadcasting
 					byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(startCommand));
 
 					foreach (KeyValuePair<Int64, UserSession> sessionData in WebSocketManager.GetUserDataCache())
@@ -757,12 +713,6 @@ namespace GenOnlineService.Controllers
 				}
 				else if (msgID == EWebSocketMessageID.NETWORK_SIGNAL)
 				{
-					var options = new JsonSerializerOptions
-					{
-						PropertyNameCaseInsensitive = true,
-						AllowOutOfOrderMetadataProperties = true
-					};
-
 					WebSocketMessage_SignalBidirectional? signal =
 						JsonSerializer.Deserialize<WebSocketMessage_SignalBidirectional>(payload, JsonOpts);
 					//Console.WriteLine("Signal received: " + signal.signal);
@@ -776,19 +726,30 @@ namespace GenOnlineService.Controllers
 						UserSession? targetSession = WebSocketManager.GetDataFromUser(signal.target_user_id);
 						if (targetSession != null)
 						{
-							// now into json for our ws msg format
-							// NOTE: outbound msg doesnt need sender ID, we only need that to determine target on the server, everything else is included in the payload
-							WebSocketMessage_SignalBidirectional outboundSignal = new WebSocketMessage_SignalBidirectional();
-							outboundSignal.msg_id = (int)EWebSocketMessageID.NETWORK_SIGNAL;
-							outboundSignal.target_user_id = sourceUserSession.m_UserID; // user here is the person who sent it to us
-							outboundSignal.payload = signal.payload;
-							byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outboundSignal));
+							Lobby? lobby = LobbyManager.GetLobby(sourceUserSession.currentLobbyID);
 
-							targetSession.QueueWebsocketSend(bytesJSON);
-							//Console.WriteLine("Signal out is: {0}", JsonSerializer.Serialize(outboundSignal));
-							//Console.WriteLine("SIGNAL SENT ({0} bytes) (from user {1} to user {2})", bytesJSON.Length, wsSess.m_UserID, sess.m_UserID);
-							//Console.WriteLine("MSG WAS: {0}", strMessage);
-							//break;
+							if (lobby != null)
+							{
+								LobbyMember? targetUser = lobby.GetMemberFromUserID(targetSession.m_UserID);
+								LobbyMember? sourceUser = lobby.GetMemberFromUserID(sourceUserSession.m_UserID);
+
+								if (sourceUser != null && targetUser != null)
+								{
+									// now into json for our ws msg format
+									// NOTE: outbound msg doesnt need sender ID, we only need that to determine target on the server, everything else is included in the payload
+									WebSocketMessage_SignalBidirectional outboundSignal = new WebSocketMessage_SignalBidirectional();
+									outboundSignal.msg_id = (int)EWebSocketMessageID.NETWORK_SIGNAL;
+									outboundSignal.target_user_id = sourceUserSession.m_UserID; // user here is the person who sent it to us
+									outboundSignal.payload = signal.payload;
+									byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outboundSignal));
+
+									targetSession.QueueWebsocketSend(bytesJSON);
+									//Console.WriteLine("Signal out is: {0}", JsonSerializer.Serialize(outboundSignal));
+									//Console.WriteLine("SIGNAL SENT ({0} bytes) (from user {1} to user {2})", bytesJSON.Length, wsSess.m_UserID, sess.m_UserID);
+									//Console.WriteLine("MSG WAS: {0}", strMessage);
+									//break;
+								}
+							}
 						}
 						else
 						{

@@ -41,6 +41,19 @@ namespace GenOnlineService
 
 		public const UInt16 g_DefaultCameraMaxHeight = 310;
 	}
+	public class RoomMember
+	{
+		public RoomMember(Int64 a_UserID, string strName, bool admin)
+		{
+			UserID = a_UserID;
+			Name = strName;
+			IsAdmin = admin;
+		}
+
+		public Int64 UserID { get; set; } = -1;
+		public String Name { get; set; } = String.Empty;
+		public bool IsAdmin { get; set; } = false;
+	}
 
 	public enum EPendingLoginState
 	{
@@ -225,12 +238,15 @@ namespace GenOnlineService
 			return newSess;
 		}
 
-		public static async void Tick()
+		public static async Task Tick()
 		{
-			foreach (var kvPair in m_dictUserSessions)
-			{
-				kvPair.Value.TickWebsocket();
-			}
+			// Give the entire tick a 20 ms deadline. All users drain concurrently via
+			// Task.WhenAll, so a slow/stuck client cannot delay others. If the deadline
+			// fires, the CancellationToken propagates into each in-flight SendAsync and
+			// into the dequeue loop guard, so the stuck user is skipped and their unsent
+			// messages stay in the queue for the next tick.
+			using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
+			await Task.WhenAll(m_dictUserSessions.Values.Select(sess => sess.TickWebsocket(cts.Token)));
 		}
 
 		public static async Task CheckForTimeouts()
@@ -444,59 +460,60 @@ namespace GenOnlineService
 			}
 		}
 
-		public static async Task SendRoomMemberListToAllInRoom(int roomID)
+		private static ConcurrentList<int> g_lstDirtyNetworkRooms = new();
+		public static async Task TickRoomMemberList()
 		{
-			// need a member list update
-			WebSocketMessage_NetworkRoomMemberListUpdate memberListUpdate = new WebSocketMessage_NetworkRoomMemberListUpdate();
-			memberListUpdate.msg_id = (int)EWebSocketMessageID.NETWORK_ROOM_MEMBER_LIST_UPDATE;
-			memberListUpdate.names = new List<string>();
-			memberListUpdate.ids = new List<Int64>();
-
-			SortedDictionary<Int64, bool> usersAlreadyProcessed = new();
-
-			List<UserSession> lstUsersToSend = new();
-
-			// populate list of everyone in the room
-			foreach (KeyValuePair<Int64, UserSession> sessionData in m_dictUserSessions)
+			foreach (int roomID in g_lstDirtyNetworkRooms)
 			{
-				UserSession sess = sessionData.Value;
-				if (sess.networkRoomID == roomID)
+				
+				// need a member list update
+				WebSocketMessage_NetworkRoomMemberListUpdate memberListUpdate = new WebSocketMessage_NetworkRoomMemberListUpdate();
+				memberListUpdate.msg_id = (int)EWebSocketMessageID.NETWORK_ROOM_MEMBER_LIST_UPDATE;
+				memberListUpdate.members = new();
+
+				SortedDictionary<Int64, bool> usersAlreadyProcessed = new();
+
+				List<UserSession> lstUsersToSend = new();
+
+				// populate list of everyone in the room
+				foreach (KeyValuePair<Int64, UserSession> sessionData in m_dictUserSessions)
 				{
-					if (!usersAlreadyProcessed.ContainsKey(sess.m_UserID))
+					UserSession sess = sessionData.Value;
+					if (sess.networkRoomID == roomID)
 					{
-						usersAlreadyProcessed[sess.m_UserID] = true;
-
-						// add to member list
-
-						// flag staff accounts
-						if (sess.IsAdmin())
+						if (!usersAlreadyProcessed.ContainsKey(sess.m_UserID))
 						{
-							memberListUpdate.names.Add(String.Format("[\u2605\u2605GO STAFF\u2605\u2605] {0}", sess.m_strDisplayName));
-						}
-						else
-						{
-							memberListUpdate.names.Add(sess.m_strDisplayName);
-						}
+							usersAlreadyProcessed[sess.m_UserID] = true;
 
-							memberListUpdate.ids.Add(sess.m_UserID);
+							// add to member list
+							string strDisplayName = sess.IsAdmin() ? String.Format("[\u2605\u2605GO STAFF\u2605\u2605] {0}", sess.m_strDisplayName) : sess.m_strDisplayName;
+							memberListUpdate.members.Add(new RoomMember(sess.m_UserID, strDisplayName, sess.IsAdmin()));
 
-						// also add to list of users who need this update, since they were in there
-						UserSession? targetWS = WebSocketManager.GetDataFromUser(sess.m_UserID);
-						if (targetWS != null)
-						{
-							lstUsersToSend.Add(targetWS);
+							// also add to list of users who need this update, since they were in there
+							UserSession? targetWS = WebSocketManager.GetDataFromUser(sess.m_UserID);
+							if (targetWS != null)
+							{
+								lstUsersToSend.Add(targetWS);
+							}
 						}
 					}
 				}
+
+				byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(memberListUpdate));
+
+				// now send to everyone in the room
+				foreach (UserSession sess in lstUsersToSend)
+				{
+					sess.QueueWebsocketSend(bytesJSON);
+				}
 			}
 
-			byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(memberListUpdate));
+			g_lstDirtyNetworkRooms.Clear();
+		}
 
-			// now send to everyone in the room
-			foreach (UserSession sess in lstUsersToSend)
-			{
-				sess.QueueWebsocketSend(bytesJSON);
-			}
+		public static async Task MarkRoomMemberListAsDirty(int roomID)
+		{
+			g_lstDirtyNetworkRooms.Add(roomID);
 		}
 	}
 
@@ -525,11 +542,23 @@ namespace GenOnlineService
 
 		private Int64 m_timeAbandoned = -1;
 
+		private string m_strMiddlewareUserID = String.Empty;
+
 		public string m_client_id = String.Empty;
 		DateTime m_CreateTime = DateTime.Now;
 		public DateTime GetCreationTime()
 		{
 			return m_CreateTime;
+		}
+
+		public void SetMiddlewareID(string strMiddlewareUserID)
+		{
+			m_strMiddlewareUserID = strMiddlewareUserID;
+		}
+
+		public string GetMiddlewareID()
+		{
+			return m_strMiddlewareUserID;
 		}
 
 		public UInt64 GetLatestMatchID()
@@ -564,7 +593,7 @@ namespace GenOnlineService
 			if (Helpers.g_dictInitialExeCRCs.ContainsKey(ownerID))
 			{
 				ACExeCRC = Helpers.g_dictInitialExeCRCs[ownerID].ToUpper();
-				Helpers.g_dictInitialExeCRCs.Remove(ownerID);
+				Helpers.g_dictInitialExeCRCs.Remove(ownerID, out string removedCRC);
 			}
 
 			m_socialContainer = socialContainer;
@@ -593,16 +622,9 @@ namespace GenOnlineService
 				return;
 			}
 
-			// If we have a websocket active, just send immediately, otherwise, queue it
-			UserWebSocketInstance websocketForUser = WebSocketManager.GetWebSocketForSession(this);
-			if (websocketForUser != null)
-			{
-				websocketForUser.SendAsync(bytesJSON, WebSocketMessageType.Text);
-			}
-			else
-			{
-				m_lstPendingWebsocketSends.Enqueue(bytesJSON);
-			}
+			// Always enqueue; the TickWebsocket drain loop is the sole sender,
+			// ensuring WebSocket.SendAsync is never called concurrently.
+			m_lstPendingWebsocketSends.Enqueue(bytesJSON);
 		}
 
 		public async Task<UserWebSocketInstance> CloseWebsocket(WebSocketCloseStatus reason, string strReason)
@@ -616,7 +638,7 @@ namespace GenOnlineService
 			return websocketForUser;
 		}
 
-		public async void TickWebsocket()
+		public async Task TickWebsocket(CancellationToken tickToken = default)
 		{
 			// Do we have a connection to send on?
 			UserWebSocketInstance websocketForUser = WebSocketManager.GetWebSocketForSession(this);
@@ -625,16 +647,16 @@ namespace GenOnlineService
 				const int maxMessagesSendPerFrame = 50;
 				int messagesSent = 0;
 				// start dequeing and sending
-				while (messagesSent < maxMessagesSendPerFrame && m_lstPendingWebsocketSends.TryDequeue(out byte[] packetData))
+				while (!tickToken.IsCancellationRequested && messagesSent < maxMessagesSendPerFrame && m_lstPendingWebsocketSends.TryDequeue(out byte[] packetData))
 				{
-					websocketForUser.SendAsync(packetData, WebSocketMessageType.Text);
+					await websocketForUser.SendAsync(packetData, WebSocketMessageType.Text, tickToken);
 					++messagesSent;
 				}
 			}
 		}
 		
 		// TODO_CACHE: Size limit this?
-		Queue<byte[]> m_lstPendingWebsocketSends = new Queue<byte[]>();
+		ConcurrentQueue<byte[]> m_lstPendingWebsocketSends = new ConcurrentQueue<byte[]>();
 
 		public void NotifyFriendslistDirty()
 		{
@@ -722,7 +744,7 @@ namespace GenOnlineService
 			return bWasInMatch;
 		}
 
-		public async void UpdateSessionNetworkRoom(Int16 newRoomID)
+		public async Task UpdateSessionNetworkRoom(Int16 newRoomID)
 		{
 			Int16 oldRoom = networkRoomID;
 			networkRoomID = newRoomID;
@@ -730,13 +752,13 @@ namespace GenOnlineService
 			// update the room roster they left
 			if (oldRoom >= 0) // only if they werent in the dummy room before
 			{
-				await WebSocketManager.SendRoomMemberListToAllInRoom(oldRoom);
+				await WebSocketManager.MarkRoomMemberListAsDirty(oldRoom);
 			}
 
 			// send update to joiner + everyone in new room already
 			if (newRoomID >= 0) // only if they actually joined a room and weren't going to the dummy room
 			{
-				await WebSocketManager.SendRoomMemberListToAllInRoom(newRoomID);
+				await WebSocketManager.MarkRoomMemberListAsDirty(newRoomID);
 			}
 
 			// make the client force refresh list too
@@ -827,7 +849,7 @@ namespace GenOnlineService
 			return Environment.TickCount64 - m_lastPingTime;
 		}
 
-		public async Task SendAsync(byte[] buffer, WebSocketMessageType messageType)
+		public async Task SendAsync(byte[] buffer, WebSocketMessageType messageType, CancellationToken externalToken = default)
 		{
 			if (m_SockInternal != null)
 			{
@@ -863,7 +885,8 @@ namespace GenOnlineService
 					}
 					*/
 
-					var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+					using var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
+					cts.CancelAfter(TimeSpan.FromMilliseconds(500));
 					await m_SockInternal.SendAsync(buffer, messageType, true, cts.Token);
 				}
 				catch
@@ -1641,7 +1664,7 @@ namespace GenOnlineService
 			// we should only have 1 turn credential at a time... clean it up
 			if (g_DictTURNUsernames.ContainsKey(userID))
 			{
-				DeleteCredentialsForUser(userID);
+				await DeleteCredentialsForUser(userID);
 			}
 
 			// create new credential
@@ -1688,6 +1711,7 @@ namespace GenOnlineService
 				}
 			}))
 			{
+				client.Timeout = TimeSpan.FromSeconds(10);
 				client.DefaultRequestHeaders.Add("Authorization", String.Format("Bearer {0}", TurnToken));
 				client.DefaultRequestHeaders.Add("Accept", "application/json");
 				//client.DefaultRequestHeaders.Add("Content-Type", "application/json");
@@ -1737,7 +1761,7 @@ namespace GenOnlineService
 			return null;
 		}
 
-		public static async void DeleteCredentialsForUser(Int64 userID)
+		public static async Task DeleteCredentialsForUser(Int64 userID)
 		{
 #if DEBUG
             await Task.Delay(1);
@@ -1799,6 +1823,7 @@ namespace GenOnlineService
 					}
 				}))
 				{
+					client.Timeout = TimeSpan.FromSeconds(10);
 					client.DefaultRequestHeaders.Add("Authorization", String.Format("Bearer {0}", TurnToken));
 					client.DefaultRequestHeaders.Add("Accept", "application/json");
 					try
@@ -2059,8 +2084,7 @@ namespace GenOnlineService
 
 	public class WebSocketMessage_NetworkRoomMemberListUpdate : WebSocketMessage
 	{
-		public List<string>? names { get; set; }
-		public List<Int64>? ids { get; set; }
+		public List<RoomMember> members { get; set; } = new();
 	}
 
 	public class WebSocketMessage_CurrentLobbyUpdate : WebSocketMessage

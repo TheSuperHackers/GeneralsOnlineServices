@@ -33,6 +33,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.Collections.Concurrent;
 
 public enum EDiscordChannelIDs
 {
@@ -56,7 +57,7 @@ public enum DiscordCommandParsingFlags
 
 public static class Helpers
 {
-	public static Dictionary<Int64, string> g_dictInitialExeCRCs = new();
+	public static ConcurrentDictionary<Int64, string> g_dictInitialExeCRCs = new();
 	public static void RegisterInitialPlayerExeCRC(Int64 user_id, string exe_crc)
 	{
 		g_dictInitialExeCRCs[user_id] = exe_crc;
@@ -111,7 +112,11 @@ public class DiscordBot
 	public DiscordBot()
 	{
 #if !DEBUG
-		InitAsync();
+		_ = InitAsync().ContinueWith(t =>
+		{
+			if (t.IsFaulted)
+				Console.WriteLine("Discord initialization failed: " + t.Exception);
+		}, TaskContinuationOptions.OnlyOnFaulted);
 #endif
 	}
 
@@ -123,18 +128,40 @@ public class DiscordBot
 		}
 	}
 
-	public async void SendNetworkRoomChat(int roomID, Int64 userID, string strDisplayName, string strMessage)
+	public async Task SendNetworkRoomChat(int roomID, Int64 userID, string strDisplayName, string strMessage)
 	{
 		try
 		{
-			string strFormattedChatMsg = String.Format("[{0} - UID {1}] {2}", strDisplayName, userID, strMessage);
+            if (Program.g_Config == null)
+            {
+                return;
+            }
 
-			ISocketMessageChannel? channel = GetChannel(EDiscordChannelIDs.NetworkRoomChat);
-			if (channel != null)
+            IConfiguration? discordSettings = Program.g_Config.GetSection("Discord");
+
+            if (discordSettings == null)
+            {
+                return;
+            }
+
+            bool discord_send_room_chat_to_discord = discordSettings.GetValue<bool>("send_room_chat_to_discord");
+
+            if (discord_send_room_chat_to_discord == null)
+            {
+                return;
+            }
+
+			if (discord_send_room_chat_to_discord)
 			{
-				string strDiscordMsg = String.Format("[NETWORK ROOM CHAT ID #{0}] {1}", roomID, strFormattedChatMsg);
-				await channel.SendMessageAsync(strDiscordMsg).ConfigureAwait(true);
-			}
+                string strFormattedChatMsg = String.Format("[{0} - UID {1}] {2}", strDisplayName, userID, strMessage);
+
+                ISocketMessageChannel? channel = GetChannel(EDiscordChannelIDs.NetworkRoomChat);
+                if (channel != null)
+                {
+                    string strDiscordMsg = String.Format("[NETWORK ROOM CHAT ID #{0}] {1}", roomID, strFormattedChatMsg);
+                    await channel.SendMessageAsync(strDiscordMsg).ConfigureAwait(true);
+                }
+            }
 		}
 		catch
 		{
@@ -693,7 +720,7 @@ public class DiscordBot
 		return Task.CompletedTask;
 	}
 
-	private async void InitAsync()
+	private async Task InitAsync()
 	{
 #if !DEBUG || USE_DISCORD_IN_DEBUG
 		DiscordSocketConfig conf = new();
@@ -707,15 +734,21 @@ public class DiscordBot
 
 		//1354979004507226294
 
-		// TODO_GITHUB: You should replace the below with your debug key, and also set the environment variable on your server for your release token. These should be different for security purposes.
-#if DEBUG
-		string Token = "TODO_GITHUB";
-#else
-		//string Token = Environment.GetEnvironmentVariable("DISCORD_BOT_TOKEN") ?? "";
-		string Token = "TODO_GITHUB";
-#endif
+		IConfigurationSection? discordSettings = Program.g_Config.GetSection("Discord");
 
-		await discord.LoginAsync(TokenType.Bot, Token).ConfigureAwait(true);
+		if (discordSettings == null)
+		{
+			throw new Exception("Discord section missing in config");
+		}
+
+		string? discordToken = discordSettings.GetValue<string>("token");
+
+		if (discordToken == null)
+		{
+			throw new Exception("Discord Token missing in config");
+		}
+
+		await discord.LoginAsync(TokenType.Bot, discordToken).ConfigureAwait(true);
 		await discord.StartAsync().ConfigureAwait(true);
 #else
 		await Task.Delay(1).ConfigureAwait(true);
@@ -728,7 +761,7 @@ public class DiscordBot
 		{
 			if (user != null)
 			{
-				user.SendMessageAsync(strMessage);
+				user.SendMessageAsync(strMessage).ContinueWith(t => { }, TaskContinuationOptions.OnlyOnFaulted);
 			}
 		}
 		catch
@@ -776,7 +809,7 @@ public class DiscordBot
 			ISocketMessageChannel? channel = GetChannel(channelID);
 			if (channel != null)
 			{
-				channel.SendMessageAsync(strMessage);
+				channel.SendMessageAsync(strMessage).ContinueWith(t => { }, TaskContinuationOptions.OnlyOnFaulted);
 			}
 		}
 		catch

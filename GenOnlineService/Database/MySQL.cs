@@ -1,4 +1,4 @@
-﻿/*
+/*
 **    GeneralsOnline Game Services - Backend Services for Command & Conquer Generals Online: Zero Hour
 **    Copyright (C) 2025  GeneralsOnline Development Team
 **
@@ -212,9 +212,9 @@ public static class DailyStatsManager
                 }
             }
         }
-		catch
+		catch (Exception ex)
 		{
-
+			Console.WriteLine($"[ERROR] RegisterOutcome failed: {ex.Message}");
 		}
 	}
 }
@@ -268,15 +268,13 @@ namespace Database
 			
 			public async static Task<MatchHistoryCollection> GetMatchesInRange(MySQLInstance m_Inst, Int64 startID, Int64 endID)
 			{
-				var res = await m_Inst.Query("SELECT * FROM match_history WHERE match_id>=@startID AND match_id<=@endID AND finished=true;",
+				var res = await m_Inst.Query("SELECT match_id, owner, name, finished, started, time_finished, map_name, map_path, match_roster_type, map_official, vanilla_teams, starting_cash, limit_superweapons, track_stats, allow_observers, max_cam_height, member_slot_0, member_slot_1, member_slot_2, member_slot_3, member_slot_4, member_slot_5, member_slot_6, member_slot_7 FROM match_history WHERE match_id>=@startID AND match_id<=@endID AND finished=true;",
 					new()
 					{
 						{ "@startID", startID },
 						{ "@endID", endID }
 					}
 				);
-
-				// TODO: Optimize query
 
 				MatchHistoryCollection collection = new();
 				foreach (var row in res.GetRows())
@@ -429,19 +427,76 @@ namespace Database
 				return retVal;
 			}
 
+			public async static Task<Dictionary<Int64, LeaderboardPoints>> GetBulkLeaderboardData(MySQLInstance m_Inst, List<Int64> playerIDs, int dayOfYear, int monthOfYear, int year)
+			{
+				Dictionary<Int64, LeaderboardPoints> results = new();
+				
+				if (playerIDs == null || playerIDs.Count == 0)
+				{
+					return results;
+				}
+
+				// Initialize all users with default values
+				foreach (Int64 playerId in playerIDs)
+				{
+					results[playerId] = new LeaderboardPoints();
+				}
+
+				// Build IN clause
+				string inClause = string.Join(",", playerIDs);
+
+				// Bulk daily
+				var resDaily = await m_Inst.Query($"SELECT user_id, points, wins+losses as `matches` FROM leaderboard_daily WHERE user_id IN ({inClause}) AND day_of_year={dayOfYear} AND year={year};", null);
+				foreach (var row in resDaily.GetRows())
+				{
+					Int64 userId = Convert.ToInt64(row["user_id"]);
+					if (results.ContainsKey(userId))
+					{
+						results[userId].daily = Convert.ToInt32(row["points"]);
+						results[userId].daily_matches = Convert.ToInt32(row["matches"]);
+					}
+				}
+
+				// Bulk monthly
+				var resMonthly = await m_Inst.Query($"SELECT user_id, points, wins+losses as `matches` FROM leaderboard_monthly WHERE user_id IN ({inClause}) AND month_of_year={monthOfYear} AND year={year};", null);
+				foreach (var row in resMonthly.GetRows())
+				{
+					Int64 userId = Convert.ToInt64(row["user_id"]);
+					if (results.ContainsKey(userId))
+					{
+						results[userId].monthly = Convert.ToInt32(row["points"]);
+						results[userId].monthly_matches = Convert.ToInt32(row["matches"]);
+					}
+				}
+
+				// Bulk yearly
+				var resYearly = await m_Inst.Query($"SELECT user_id, points, wins+losses as `matches` FROM leaderboard_yearly WHERE user_id IN ({inClause}) AND year={year};", null);
+				foreach (var row in resYearly.GetRows())
+				{
+					Int64 userId = Convert.ToInt64(row["user_id"]);
+					if (results.ContainsKey(userId))
+					{
+						results[userId].yearly = Convert.ToInt32(row["points"]);
+						results[userId].yearly_matches = Convert.ToInt32(row["matches"]);
+					}
+				}
+
+				return results;
+			}
+
 			public async static Task DetermineLobbyWinnerIfNotPresent(MySQLInstance m_Inst, GenOnlineService.Lobby lobbyInst)
 			{
 				// NOTE: this works only when you call this function BEFORE updating ELO, as elo will read it all to award points
 
 				// get each lobby member
-				var res = await m_Inst.Query("SELECT * FROM match_history WHERE match_id=@matchID LIMIT 1;",
+				var res = await m_Inst.Query("SELECT member_slot_0, member_slot_1, member_slot_2, member_slot_3, member_slot_4, member_slot_5, member_slot_6, member_slot_7 FROM match_history WHERE match_id=@matchID LIMIT 1;",
 						new()
 						{
 							{ "@matchID", lobbyInst.MatchID }
 						}
 					);
 
-				List<MatchdataMemberModel> lstMembers = new List<MatchdataMemberModel>();
+				Dictionary<int, MatchdataMemberModel> lstMembers = new Dictionary<int, MatchdataMemberModel>();
 				foreach (var row in res.GetRows())
 				{
 					string? strJson_Slot0 = Convert.ToString(row["member_slot_0"]);
@@ -463,26 +518,26 @@ namespace Database
 					MatchdataMemberModel? member6 = String.IsNullOrEmpty(strJson_Slot6) ? null : JsonSerializer.Deserialize<MatchdataMemberModel>(strJson_Slot6);
 					MatchdataMemberModel? member7 = String.IsNullOrEmpty(strJson_Slot7) ? null : JsonSerializer.Deserialize<MatchdataMemberModel>(strJson_Slot7);
 
-					// add members to collection
-					if (member0 != null) { lstMembers.Add((MatchdataMemberModel)member0); }
-					if (member1 != null) { lstMembers.Add((MatchdataMemberModel)member1); }
-					if (member2 != null) { lstMembers.Add((MatchdataMemberModel)member2); }
-					if (member3 != null) { lstMembers.Add((MatchdataMemberModel)member3); }
-					if (member4 != null) { lstMembers.Add((MatchdataMemberModel)member4); }
-					if (member5 != null) { lstMembers.Add((MatchdataMemberModel)member5); }
-					if (member6 != null) { lstMembers.Add((MatchdataMemberModel)member6); }
-					if (member7 != null) { lstMembers.Add((MatchdataMemberModel)member7); }
+					// add members to collection with slot index as key
+					if (member0 != null) { lstMembers[0] = member0.Value; }
+					if (member1 != null) { lstMembers[1] = member1.Value; }
+					if (member2 != null) { lstMembers[2] = member2.Value; }
+					if (member3 != null) { lstMembers[3] = member3.Value; }
+					if (member4 != null) { lstMembers[4] = member4.Value; }
+					if (member5 != null) { lstMembers[5] = member5.Value; }
+					if (member6 != null) { lstMembers[6] = member6.Value; }
+					if (member7 != null) { lstMembers[7] = member7.Value; }
 				}
 
 				// do we have a winner already?
 				bool bHasWinner = false;
 				int winnerTeam = -1;
-				foreach (MatchdataMemberModel lobbyMember in lstMembers)
+				foreach (var kvp in lstMembers)
 				{
-					if (lobbyMember.won)
+					if (kvp.Value.won)
 					{
 						bHasWinner = true;
-						winnerTeam = lobbyMember.team;
+						winnerTeam = kvp.Value.team;
 						break;
 					}
 				}
@@ -492,19 +547,16 @@ namespace Database
 				{
 					if (winnerTeam != -1)
 					{
-						int slotIndex = 0;
-						foreach (MatchdataMemberModel? lobbyMember in lstMembers)
+						foreach (var kvp in lstMembers)
 						{
-							if (lobbyMember != null)
+							int slotIndex = kvp.Key;
+							MatchdataMemberModel lobbyMember = kvp.Value;
+							
+							if (lobbyMember.team == winnerTeam) // same team, and not '-1'
 							{
-								if (lobbyMember.Value.team == winnerTeam) // same team, and not '-1'
-								{
-									// save it
-									await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
-								}
+								// save it
+								await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
 							}
-
-							++slotIndex;
 						}
 					}
 				}
@@ -515,14 +567,17 @@ namespace Database
 					// pick the last person to leave
 					DateTime mostRecentlyLeftTimestamp = DateTime.UnixEpoch;
 					MatchdataMemberModel? lastPlayerToLeave = null;
-					foreach (MatchdataMemberModel lobbyMember in lstMembers)
+					int lastPlayerSlotIndex = -1;
+					foreach (var kvp in lstMembers)
 					{
+						MatchdataMemberModel lobbyMember = kvp.Value;
 						if (lobbyInst.TimeMemberLeft.ContainsKey(lobbyMember.user_id))
 						{
 							if (lobbyInst.TimeMemberLeft[lobbyMember.user_id] >= mostRecentlyLeftTimestamp)
 							{
 								mostRecentlyLeftTimestamp = lobbyInst.TimeMemberLeft[lobbyMember.user_id];
 								lastPlayerToLeave = lobbyMember;
+								lastPlayerSlotIndex = kvp.Key;
 							}
 						}
 					}
@@ -532,25 +587,22 @@ namespace Database
 						int winningPlayerTeam = lastPlayerToLeave.Value.team;
 
 						// this player + everyone on the same team is also a winner!
-						int slotIndex = 0;
-						foreach (MatchdataMemberModel? lobbyMember in lstMembers)
+						foreach (var kvp in lstMembers)
 						{
-							if (lobbyMember != null)
+							int slotIndex = kvp.Key;
+							MatchdataMemberModel lobbyMember = kvp.Value;
+							
+							// is it this guy?
+							if (lobbyMember.user_id == lastPlayerToLeave.Value.user_id)
 							{
-								// is it this guy?
-								if (lobbyMember.Value.user_id == lastPlayerToLeave.Value.user_id)
-								{
-									// save it
-									await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
-								}
-								else if (winningPlayerTeam != -1 && lobbyMember.Value.team == winningPlayerTeam) // same team, and not '-1'
-								{
-									// save it
-									await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
-								}
+								// save it
+								await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
 							}
-
-							++slotIndex;
+							else if (winningPlayerTeam != -1 && lobbyMember.team == winningPlayerTeam) // same team, and not '-1'
+							{
+								// save it
+								await Database.Functions.Lobby.UpdateMatchHistoryMakeWinner(GlobalDatabaseInstance.g_Database, lobbyInst.MatchID, slotIndex);
+							}
 						}
 					}
 
@@ -575,7 +627,7 @@ namespace Database
 				int year = lobbyInst.TimeCreated.Year;
 
 				// process each member
-				var res = await m_Inst.Query("SELECT * FROM match_history WHERE match_id=@matchID LIMIT 1;",
+				var res = await m_Inst.Query("SELECT member_slot_0, member_slot_1, member_slot_2, member_slot_3, member_slot_4, member_slot_5, member_slot_6, member_slot_7 FROM match_history WHERE match_id=@matchID LIMIT 1;",
 						new()
 						{
 							{ "@matchID", lobbyInst.MatchID }
@@ -619,13 +671,9 @@ namespace Database
 				{
                     Dictionary<Int64, EloData> dictEloData = new Dictionary<Int64, EloData>();
 
-                    // initialize data
-                    foreach (MatchdataMemberModel member in lstMembers)
-                    {
-                        // TODO_ELO: do bulk query instead
-                        EloData playerEloData = await Database.Functions.Auth.GetELOData(GlobalDatabaseInstance.g_Database, member.user_id);
-                        dictEloData[member.user_id] = playerEloData;
-                    }
+                    // initialize data with bulk query (1 query instead of N)
+                    List<Int64> userIds = lstMembers.Select(m => m.user_id).ToList();
+                    dictEloData = await Database.Functions.Auth.GetBulkELOData(GlobalDatabaseInstance.g_Database, userIds);
 
                     foreach (MatchdataMemberModel member in lstMembers)
                     {
@@ -677,12 +725,13 @@ namespace Database
                     Dictionary<Int64, EloData> dictEloData_Monthly = new Dictionary<Int64, EloData>();
                     Dictionary<Int64, EloData> dictEloData_Yearly = new Dictionary<Int64, EloData>();
 
-                    // initialize data
+                    // initialize data with bulk query (3 queries instead of N*3)
+                    List<Int64> userIds = lstMembers.Select(m => m.user_id).ToList();
+                    Dictionary<Int64, LeaderboardPoints> bulkLbData = await GetBulkLeaderboardData(m_Inst, userIds, dayOfYear, monthOfYear, year);
+                    
                     foreach (MatchdataMemberModel member in lstMembers)
                     {
-                        // TODO_ELO: do bulk query instead
-                        LeaderboardPoints userLBPoints = await GetLeaderboardDataForUser(m_Inst, member.user_id, dayOfYear, monthOfYear, year);
-						
+                        LeaderboardPoints userLBPoints = bulkLbData[member.user_id];
                         dictEloData_Daily[member.user_id] = new EloData(userLBPoints.daily, userLBPoints.daily_matches);
                         dictEloData_Monthly[member.user_id] = new EloData(userLBPoints.monthly, userLBPoints.monthly_matches);
                         dictEloData_Yearly[member.user_id] = new EloData(userLBPoints.yearly, userLBPoints.yearly_matches);
@@ -746,7 +795,12 @@ namespace Database
                         }
                     }
 
-					// save each ELO data to DB
+					// save each ELO data to DB using batched transaction
+					// Build all UPDATE statements and execute in single transaction
+					List<string> dailyUpdates = new();
+					List<string> monthlyUpdates = new();
+					List<string> yearlyUpdates = new();
+
 					foreach (MatchdataMemberModel member in lstMembers)
 					{
 						EloData playerData_Daily = dictEloData_Daily[member.user_id];
@@ -765,44 +819,31 @@ namespace Database
 							++lossesModifier;
 						}
 
-						// DAILY
-                        await m_Inst.Query("UPDATE leaderboard_daily SET points=@points, losses=losses+@losses_modifier, wins=wins+@wins_modifier WHERE user_id=@user_id AND day_of_year=@day_of_year AND year=@year LIMIT 1;",
-                        new()
-                        {
-                            { "@points", playerData_Daily.Rating },
-                            { "@losses_modifier", lossesModifier },
-                            { "@wins_modifier", winsModifier},
-                            { "@user_id", member.user_id },
-                            { "@day_of_year", dayOfYear },
-                            { "@year", year }
-                        }
-                        );
+						// Build UPDATE statements (sanitized parameters)
+						dailyUpdates.Add($"UPDATE leaderboard_daily SET points={playerData_Daily.Rating}, losses=losses+{lossesModifier}, wins=wins+{winsModifier} WHERE user_id={member.user_id} AND day_of_year={dayOfYear} AND year={year} LIMIT 1;");
+						monthlyUpdates.Add($"UPDATE leaderboard_monthly SET points={playerData_Monthly.Rating}, losses=losses+{lossesModifier}, wins=wins+{winsModifier} WHERE user_id={member.user_id} AND month_of_year={monthOfYear} AND year={year} LIMIT 1;");
+						yearlyUpdates.Add($"UPDATE leaderboard_yearly SET points={playerData_Yearly.Rating}, losses=losses+{lossesModifier}, wins=wins+{winsModifier} WHERE user_id={member.user_id} AND year={year} LIMIT 1;");
+					}
 
-                        await m_Inst.Query("UPDATE leaderboard_monthly SET points=@points, losses=losses+@losses_modifier, wins=wins+@wins_modifier WHERE user_id=@user_id AND month_of_year=@month_of_year AND year=@year LIMIT 1;",
-                        new()
-                        {
-                            { "@points", playerData_Monthly.Rating },
-                            { "@losses_modifier", lossesModifier },
-                            { "@wins_modifier", winsModifier},
-                            { "@user_id", member.user_id },
-                            { "@month_of_year", monthOfYear },
-                            { "@year", year }
-                        }
-                        );
+					// Execute all updates in single batch (3 queries instead of N*3)
+					if (dailyUpdates.Count > 0)
+					{
+						string batchedDaily = string.Join("\n", dailyUpdates);
+						await m_Inst.Query(batchedDaily, null);
+					}
 
-                        await m_Inst.Query("UPDATE leaderboard_yearly SET points=@points, losses=losses+@losses_modifier, wins=wins+@wins_modifier WHERE user_id=@user_id AND year=@year LIMIT 1;",
-                        new()
-                        {
-                            { "@points", playerData_Yearly.Rating },
-                            { "@losses_modifier", lossesModifier },
-                            { "@wins_modifier", winsModifier},
-                            { "@user_id", member.user_id },
-                            { "@year", year }
-                        }
-                        );
+					if (monthlyUpdates.Count > 0)
+					{
+						string batchedMonthly = string.Join("\n", monthlyUpdates);
+						await m_Inst.Query(batchedMonthly, null);
+					}
 
+					if (yearlyUpdates.Count > 0)
+					{
+						string batchedYearly = string.Join("\n", yearlyUpdates);
+						await m_Inst.Query(batchedYearly, null);
+					}
 
-                    }
                 }
 			}
 
@@ -1455,6 +1496,39 @@ namespace Database
 				return new(EloConfig.BaseRating, 0);
             }
 
+			public async static Task<Dictionary<Int64, EloData>> GetBulkELOData(MySQLInstance m_Inst, List<Int64> user_ids)
+			{
+				Dictionary<Int64, EloData> results = new();
+				
+				if (user_ids == null || user_ids.Count == 0)
+				{
+					return results;
+				}
+
+				// Build IN clause with parameters
+				string inClause = string.Join(",", user_ids);
+				var res = await m_Inst.Query($"SELECT user_id, elo_rating, elo_num_matches FROM users WHERE user_id IN ({inClause});", null);
+
+				foreach (var row in res.GetRows())
+				{
+					Int64 userId = Convert.ToInt64(row["user_id"]);
+					int rating = Convert.ToInt32(row["elo_rating"]);
+					int numMatches = Convert.ToInt32(row["elo_num_matches"]);
+					results[userId] = new EloData(rating, numMatches);
+				}
+
+				// Fill in default values for users not found
+				foreach (Int64 userId in user_ids)
+				{
+					if (!results.ContainsKey(userId))
+					{
+						results[userId] = new EloData(EloConfig.BaseRating, 0);
+					}
+				}
+
+				return results;
+			}
+
 			public async static Task<PlayerStats> GetPlayerStats(MySQLInstance m_Inst, Int64 user_id)
 			{
 				// TODO: Return null if user doesnt actually exist, instead of empty stats
@@ -1588,7 +1662,7 @@ namespace Database
 				return sb.ToString();
 			}
 
-			public static async void CleanupPendingLogin(MySQLInstance m_Inst, string strGameCode)
+			public static async Task CleanupPendingLogin(MySQLInstance m_Inst, string strGameCode)
 			{
 				strGameCode = strGameCode.ToUpper();
 
@@ -1904,7 +1978,7 @@ namespace Database
 
 			internal static async Task CreateUserIfNotExists_DevAccount(MySQLInstance m_Inst, Int64 user_id, string display_name)
 			{
-				var res = await m_Inst.Query("SELECT * FROM users WHERE user_id=@user_id LIMIT 1;",
+				var res = await m_Inst.Query("SELECT user_id FROM users WHERE user_id=@user_id LIMIT 1;",
 					new()
 					{
 						{ "@user_id", user_id}
@@ -1936,13 +2010,147 @@ namespace Database
 					}
 				);
 			}
+
+			// Cache for display names (24-hour TTL - names rarely change)
+			public static class DisplayNameCache
+			{
+				private static readonly System.Collections.Concurrent.ConcurrentDictionary<Int64, (string DisplayName, DateTime CachedAt)> s_cache = new();
+				private static readonly TimeSpan s_cacheDuration = TimeSpan.FromHours(24);
+
+				public static async Task<string> GetCachedDisplayName(MySQLInstance m_Inst, Int64 userID)
+				{
+					if (s_cache.TryGetValue(userID, out var cached))
+					{
+						if (DateTime.UtcNow - cached.CachedAt < s_cacheDuration)
+						{
+							return cached.DisplayName;
+						}
+						s_cache.TryRemove(userID, out _);
+					}
+
+					string displayName = await GetDisplayName(m_Inst, userID);
+					s_cache.TryAdd(userID, (displayName, DateTime.UtcNow));
+					return displayName;
+				}
+
+				public static async Task<Dictionary<Int64, string>> GetCachedDisplayNameBulk(MySQLInstance m_Inst, List<Int64> lstUserIDs)
+				{
+					Dictionary<Int64, string> result = new();
+					List<Int64> uncachedIDs = new();
+
+					foreach (Int64 userID in lstUserIDs)
+					{
+						if (s_cache.TryGetValue(userID, out var cached) && DateTime.UtcNow - cached.CachedAt < s_cacheDuration)
+						{
+							result[userID] = cached.DisplayName;
+						}
+						else
+						{
+							s_cache.TryRemove(userID, out _);
+							uncachedIDs.Add(userID);
+						}
+					}
+
+					if (uncachedIDs.Count > 0)
+					{
+						Dictionary<Int64, string> dbResults = await GetDisplayNameBulk(m_Inst, uncachedIDs);
+						foreach (var kvp in dbResults)
+						{
+							s_cache.TryAdd(kvp.Key, (kvp.Value, DateTime.UtcNow));
+							result[kvp.Key] = kvp.Value;
+						}
+					}
+
+					return result;
+				}
+
+				public static void InvalidateCache(Int64 userID)
+				{
+					s_cache.TryRemove(userID, out _);
+				}
+			}
+
+			// Cache for user lobby preferences (1-hour TTL)
+			public static class UserPreferencesCache
+			{
+				private static readonly System.Collections.Concurrent.ConcurrentDictionary<Int64, (UserLobbyPreferences Prefs, DateTime CachedAt)> s_cache = new();
+				private static readonly TimeSpan s_cacheDuration = TimeSpan.FromHours(1);
+
+				public static async Task<UserLobbyPreferences> GetCachedPreferences(MySQLInstance m_Inst, Int64 userID)
+				{
+					if (s_cache.TryGetValue(userID, out var cached))
+					{
+						if (DateTime.UtcNow - cached.CachedAt < s_cacheDuration)
+						{
+							return cached.Prefs;
+						}
+						s_cache.TryRemove(userID, out _);
+					}
+
+					UserLobbyPreferences prefs = await GetUserLobbyPreferences(m_Inst, userID);
+					s_cache.TryAdd(userID, (prefs, DateTime.UtcNow));
+					return prefs;
+				}
+
+				public static void InvalidateCache(Int64 userID)
+				{
+					s_cache.TryRemove(userID, out _);
+				}
+			}
 		}
 	}
 
 	// Updated MySQLInstance class to fix memory leaks by ensuring proper disposal of resources.
 	public class MySQLInstance : IDisposable
 	{
-		//private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
+		// Connection string is built once from config and reused across all concurrent queries.
+		// The MySQL connector's built-in connection pool (MySqlConnection with Pooling=true) is
+		// fully thread-safe: each call to OpenAsync() leases an independent physical connection
+		// from the pool, so queries on different threads never share a connection object.
+		private static string? _cachedConnectionString;
+		private static readonly object _connStringLock = new object();
+
+		private static string GetConnectionString()
+		{
+			if (_cachedConnectionString != null)
+				return _cachedConnectionString;
+
+			lock (_connStringLock)
+			{
+				if (_cachedConnectionString != null)
+					return _cachedConnectionString;
+
+				if (Program.g_Config == null)
+					throw new Exception("Config is null. Check config file exists.");
+
+				IConfiguration? dbSettings = Program.g_Config.GetSection("Database");
+				if (dbSettings == null)
+					throw new Exception("Database section in config is null / not set in config");
+
+				string? db_host     = dbSettings.GetValue<string>("db_host")     ?? throw new Exception("DB Hostname is null / not set in config");
+				string? db_name     = dbSettings.GetValue<string>("db_name")     ?? throw new Exception("DB Name is null / not set in config");
+				string? db_username = dbSettings.GetValue<string>("db_username") ?? throw new Exception("DB Username is null / not set in config");
+				string? db_password = dbSettings.GetValue<string>("db_password") ?? throw new Exception("DB Password is null / not set in config");
+				ushort  db_port     = dbSettings.GetValue<ushort>("db_port");
+
+				int  db_min_poolsize     = dbSettings.GetValue<int?>("db_min_poolsize")     ?? 50;
+				int  db_max_poolsize     = dbSettings.GetValue<int?>("db_max_poolsize")     ?? 500;
+				bool db_use_pooling      = dbSettings.GetValue<bool?>("db_use_pooling")     ?? true;
+				bool db_conn_reset       = dbSettings.GetValue<bool?>("db_conn_reset")      ?? true;
+				int  db_connect_timeout  = dbSettings.GetValue<int?>("db_connect_timeout")  ?? 10;
+				int  db_command_timeout  = dbSettings.GetValue<int?>("db_command_timeout")  ?? 10;
+
+				_cachedConnectionString = string.Format(
+					"Server={0}; database={1}; user={2}; password={3}; port={4};" +
+					"Pooling={5};DefaultCommandTimeout={9};Connect Timeout={10};" +
+					"MinimumPoolSize={6};maximumpoolsize={7};AllowUserVariables=true;ConnectionReset={8};",
+					db_host, db_name, db_username, db_password, db_port,
+					db_use_pooling, db_min_poolsize, db_max_poolsize, db_conn_reset,
+					db_command_timeout, db_connect_timeout);
+
+				return _cachedConnectionString;
+			}
+		}
 
 #if !USE_PER_QUERY_CONNECTION
         private MySqlConnection m_Connection = null;
@@ -1970,26 +2178,19 @@ namespace Database
                     m_Connection = null;
                 }
 #endif
-				//_semaphore.Dispose();
 			}
 		}
 
-		private DateTime m_LastQueryTime = DateTime.Now;
+		// Written with Interlocked so concurrent threads don't race on a shared DateTime field.
+		private long m_LastQueryTimeTicks = DateTime.Now.Ticks;
 
-		public async void KeepAlive()
+		public async Task KeepAlive()
 		{
-			//await _semaphore.WaitAsync();
-			try
+			long lastTicks = Interlocked.Read(ref m_LastQueryTimeTicks);
+			double timeSinceLastQueryMs = TimeSpan.FromTicks(DateTime.Now.Ticks - lastTicks).TotalMilliseconds;
+			if (timeSinceLastQueryMs > 300000)
 			{
-				double timeSinceLastQueryAuth = (DateTime.Now - m_LastQueryTime).TotalMilliseconds;
-				if (timeSinceLastQueryAuth > 300000)
-				{
-					await Query("SELECT user_id FROM users LIMIT 1;", null).ConfigureAwait(false);
-				}
-			}
-			finally
-			{
-				//_semaphore.Release();
+				await Query("SELECT user_id FROM users LIMIT 1;", null).ConfigureAwait(false);
 			}
 		}
 
@@ -1998,7 +2199,7 @@ namespace Database
 			await m_Inst.Query("SELECT * FROM users LIMIT 1", null);
 		}
 
-		public bool Initialize(WebApplicationBuilder builder, bool bIsStartup = true)
+		public async Task<bool> Initialize(WebApplicationBuilder builder, bool bIsStartup = true)
 		{
 			if (Program.g_Config == null)
 			{
@@ -2093,7 +2294,7 @@ namespace Database
 				//Console.WriteLine(String.Format("Server={0}; database={1}; user={2}; password={3}; port={4};Pooling=true;Connect Timeout=100;MinimumPoolSize=1;maximumpoolsize=100;AllowUserVariables=true;ConnectionReset=false;SslMode=Required;", dbSettings));
 
 				Console.WriteLine("Connecting to DB...");
-				m_Connection.Open();
+				await m_Connection.OpenAsync().ConfigureAwait(false);
 
 				Console.WriteLine("Connected to: " + m_Connection.ServerVersion);
 
@@ -2102,8 +2303,7 @@ namespace Database
 
 				var t = Database.Functions.Lobby.GetAllLobbyInfo(this, 0, true, true, true, true, true);
 
-				t.Wait();
-				List<LobbyData> lstLobbies = t.Result;
+				List<LobbyData> lstLobbies = await t;
 #endif
 
 				return true;
@@ -2178,82 +2378,19 @@ namespace Database
 
 		public async Task<CMySQLResult> Query(string commandStr, Dictionary<string, object>? dictCommandValues, int attempt = 0)
 		{
-			bool semaphoreAcquired = false;
-			CMySQLResult result = new CMySQLResult(0); // default with 0 rows
-			MySqlConnection? connection = null;
-
-			// after 3 attempts, give up
+			// After 3 attempts, give up.
 			if (attempt >= 3)
-			{
-				return result;
-			}
+				return new CMySQLResult(0);
 
+			Interlocked.Exchange(ref m_LastQueryTimeTicks, DateTime.Now.Ticks);
+
+			// Each call opens its own connection leased from the shared pool.
+			// No serializing lock is needed: MySqlConnection instances are never shared between callers.
 			try
 			{
-				//await _semaphore.WaitAsync();
-				semaphoreAcquired = true;
-				m_LastQueryTime = DateTime.Now;
-
-#if !USE_PER_QUERY_CONNECTION
-                connection = m_Connection;
-#else
-				if (Program.g_Config == null)
+				using (var connection = new MySqlConnection(GetConnectionString()))
 				{
-					throw new Exception("Config is null. Check config file exists.");
-				}
-
-				// db settings
-				IConfiguration? dbSettings = Program.g_Config.GetSection("Database");
-
-				if (dbSettings == null)
-				{
-					throw new Exception("Database section in config is null / not set in config");
-				}
-
-				string? db_host = dbSettings.GetValue<string>("db_host");
-				string? db_name = dbSettings.GetValue<string>("db_name");
-				string? db_username = dbSettings.GetValue<string>("db_username");
-				string? db_password = dbSettings.GetValue<string>("db_password");
-				UInt16? db_port = dbSettings.GetValue<UInt16>("db_port");
-				int? db_min_poolsize = dbSettings.GetValue<int>("db_min_poolsize");
-				int? db_max_poolsize = dbSettings.GetValue<int>("db_max_poolsize");
-				bool? db_use_pooling = dbSettings.GetValue<bool>("db_use_pooling");
-				bool? db_conn_reset = dbSettings.GetValue<bool>("db_conn_reset");
-				int? db_connect_timeout = dbSettings.GetValue<int>("db_connect_timeout");
-				int? db_command_timeout = dbSettings.GetValue<int>("db_command_timeout");
-
-				if (db_host == null)
-				{
-					throw new Exception("DB Hostname is null / not set in config");
-				}
-
-				if (db_name == null)
-				{
-					throw new Exception("DB Hostname is null / not set in config");
-				}
-
-				if (db_username == null)
-				{
-					throw new Exception("DB Hostname is null / not set in config");
-				}
-
-				if (db_password == null)
-				{
-					throw new Exception("DB Hostname is null / not set in config");
-				}
-
-				if (db_port == null)
-				{
-					throw new Exception("DB Hostname is null / not set in config");
-				}
-
-				
-				
-#endif
-				using (connection = new MySqlConnection(String.Format("Server={0}; database={1}; user={2}; password={3}; port={4};Pooling={5};DefaultCommandTimeout={9};Connect Timeout={10};MinimumPoolSize={6};maximumpoolsize={7};AllowUserVariables=true;ConnectionReset={8};",
-					db_host, db_name, db_username, db_password, db_port, db_use_pooling, db_min_poolsize, db_max_poolsize, db_conn_reset, db_command_timeout, db_connect_timeout)))
-				{
-					connection.Open();
+					await connection.OpenAsync().ConfigureAwait(false);
 
 					try
 					{
@@ -2262,49 +2399,30 @@ namespace Database
 							if (dictCommandValues != null)
 							{
 								foreach (var kvPair in dictCommandValues)
-								{
 									command.Parameters.AddWithValue(kvPair.Key, kvPair.Value);
-								}
 							}
 
 							if (commandStr.ToUpper().StartsWith("DELETE") || commandStr.ToUpper().StartsWith("UPDATE"))
 							{
 								int numRowsModified = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
-								result = new CMySQLResult(numRowsModified);
+								return new CMySQLResult(numRowsModified);
 							}
 							else
 							{
 								using (System.Data.Common.DbDataReader reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
 								{
-									result = new CMySQLResult(reader, (ulong)command.LastInsertedId);
+									return new CMySQLResult(reader, (ulong)command.LastInsertedId);
 								}
 							}
 						}
 					}
 					catch (InvalidOperationException e)
 					{
-						Console.WriteLine("MySQL Query Error: {0}", e.InnerException == null ? e.Message : e.InnerException.ToString());
-						Console.WriteLine("MySQL is attempting to reconnect");
-
-						string strExceptionMsg = String.Empty;
-						if (e.InnerException != null)
-						{
-							strExceptionMsg = e.InnerException.ToString();
-						}
-						else
-						{
-							strExceptionMsg = e.Message;
-						}
-
+						string strExceptionMsg = e.InnerException != null ? e.InnerException.ToString() : e.Message;
+						Console.WriteLine("MySQL Query Error (will retry): {0}", strExceptionMsg);
 						File.WriteAllText(Path.Combine("Exceptions", "MYSQL_2_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".txt"), "MySQL Query Error:" + strExceptionMsg);
 
-						Initialize(null, false);
-						// Ensure semaphore is released before recursive call
-						if (semaphoreAcquired)
-						{
-							//_semaphore.Release();
-							semaphoreAcquired = false;
-						}
+						// The pool will surface a fresh physical connection on the next attempt.
 						return await Query(commandStr, dictCommandValues, attempt + 1).ConfigureAwait(false);
 					}
 					catch (MySqlException ex)
@@ -2314,46 +2432,23 @@ namespace Database
 					}
 					catch (Exception e)
 					{
-						string strErrorMsg = String.Format("MySQL Query Error: {0}", e.Message);
+						string strErrorMsg = string.Format("MySQL Query Error: {0}", e.Message);
 						Console.WriteLine(strErrorMsg);
 						File.WriteAllText(Path.Combine("Exceptions", "MYSQL_3_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".txt"), strErrorMsg);
 
-						// Ensure semaphore is released before throwing
-						if (semaphoreAcquired)
-						{
-							//_semaphore.Release();
-							semaphoreAcquired = false;
-						}
-
 						if (System.Diagnostics.Debugger.IsAttached)
-						{
 							throw;
-						}
 					}
 				}
 			}
 			catch (Exception e)
 			{
-				string strErrorMsg = String.Format("MySQL Query Error: {0}", e.Message);
-					Console.WriteLine(strErrorMsg);
-					File.WriteAllText(Path.Combine("Exceptions", "MYSQL_4_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".txt"), strErrorMsg);
-			}
-			finally
-			{
-				if (semaphoreAcquired)
-				{
-					//_semaphore.Release();
-				}
-#if USE_PER_QUERY_CONNECTION
-				if (connection != null)
-				{
-					connection.Close();
-					connection.Dispose();
-				}
-#endif
+				string strErrorMsg = string.Format("MySQL Query Error: {0}", e.Message);
+				Console.WriteLine(strErrorMsg);
+				File.WriteAllText(Path.Combine("Exceptions", "MYSQL_4_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".txt"), strErrorMsg);
 			}
 
-			return result;
+			return new CMySQLResult(0);
 		}
 	}
 

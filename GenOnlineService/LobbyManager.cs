@@ -329,7 +329,6 @@ namespace GenOnlineService
 			{
 				LobbyMember placeholderMember = new LobbyMember(this, null, -1, String.Empty, String.Empty, 0, -1, -1, -1, i < max_players ? EPlayerType.SLOT_OPEN : EPlayerType.SLOT_CLOSED, i, true);
 				Members[i] = placeholderMember;
-				TimeMemberLeft[i] = DateTime.UnixEpoch;
 			}
 		}
 
@@ -418,7 +417,7 @@ namespace GenOnlineService
 			}
 		}
 
-		public async void Tick()
+		public async Task Tick()
 		{
 			if (m_NextProbe != 0 && Environment.TickCount64 >= m_NextProbe)
 			{
@@ -475,57 +474,64 @@ namespace GenOnlineService
 			}
 		}
 
-		Mutex g_Mutex = new();
+		private readonly SemaphoreSlim g_SlotLock = new SemaphoreSlim(1, 1);
 		public async Task<bool> AddMember(UserSession playerSession, string strDisplayName, UInt16 userPreferredPort, bool bHasMap, UserLobbyPreferences lobbyPrefs)
 		{
-			// NOTE: AddMember is called async, so timing + slot determination could result in players being inserted in the same slot
-			g_Mutex.WaitOne();
-			// find first open slot
-			bool bFoundSlot = false;
-			UInt16 slotIndex = 0;
-			foreach (var memberEntry in Members)
+			LobbyMember? existingMember = GetMemberFromUserID(playerSession.m_UserID);
+			if (existingMember != null) // we're already in this lobby
 			{
-				if (memberEntry.SlotState == EPlayerType.SLOT_OPEN)
-				{
-					// found a gap, use this slot index
-					bFoundSlot = true;
-					break;
-				}
-				++slotIndex;
-			}
-
-			if (!bFoundSlot)
-			{
-				g_Mutex.ReleaseMutex();
 				return false;
 			}
 
-            // Check social requirements (dont allow blocked in, and check friends only)
-            // SOCIAL: If the lobby owner has source user blocked, remove the lobby
-			// NOTE: Only check this for custom match, quick match checks it during matchmaking bucket stage
-			if (LobbyType == ELobbyType.CustomGame)
+			// NOTE: AddMember is called async, so timing + slot determination could result in players being inserted in the same slot
+			await g_SlotLock.WaitAsync();
+			try
 			{
-				UserSession? lobbyOwnerSession = WebSocketManager.GetDataFromUser(Owner);
+				// find first open slot
+				bool bFoundSlot = false;
+				UInt16 slotIndex = 0;
+				foreach (var memberEntry in Members)
+				{
+					if (memberEntry.SlotState == EPlayerType.SLOT_OPEN)
+					{
+						// found a gap, use this slot index
+						bFoundSlot = true;
+						break;
+					}
+					++slotIndex;
+				}
 
-				if (lobbyOwnerSession != null)
-                {
-                    // dont allow join if blocked
-                    if (lobbyOwnerSession.GetSocialContainer().Blocked.Contains(playerSession.m_UserID))
-                    {
-                        return false;
-                    }
+				if (!bFoundSlot)
+				{
+					return false;
+				}
 
-                    // check joinability
-                    if (LobbyJoinability == ELobbyJoinability.FriendsOnly)
+                // Check social requirements (dont allow blocked in, and check friends only)
+                // SOCIAL: If the lobby owner has source user blocked, remove the lobby
+				// NOTE: Only check this for custom match, quick match checks it during matchmaking bucket stage
+				if (LobbyType == ELobbyType.CustomGame)
+				{
+					UserSession? lobbyOwnerSession = WebSocketManager.GetDataFromUser(Owner);
+
+					if (lobbyOwnerSession != null)
                     {
-                        // If it's friends only, return false if they aren't friends
-                        if (!lobbyOwnerSession.GetSocialContainer().Friends.Contains(playerSession.m_UserID))
+                        // dont allow join if blocked
+                        if (lobbyOwnerSession.GetSocialContainer().Blocked.Contains(playerSession.m_UserID))
                         {
                             return false;
                         }
+
+                        // check joinability
+                        if (LobbyJoinability == ELobbyJoinability.FriendsOnly)
+                        {
+                            // If it's friends only, return false if they aren't friends
+                            if (!lobbyOwnerSession.GetSocialContainer().Friends.Contains(playerSession.m_UserID))
+                            {
+                            return false;
+                            }
+                        }
                     }
                 }
-            }
 
             // de dupe names
             string strOriginalDisplayName = strDisplayName;
@@ -595,6 +601,7 @@ namespace GenOnlineService
 			}
 
 			Members[slotIndex] = newMember;
+			TimeMemberLeft[playerSession.m_UserID] = DateTime.UnixEpoch;
 
 			// leave network room we were in
 			playerSession.UpdateSessionNetworkRoom(-1);
@@ -639,12 +646,16 @@ namespace GenOnlineService
 			// also update the lobby for everyone inside of it
 			DirtyRetransmit();
 
-			g_Mutex.ReleaseMutex();
 			Console.WriteLine("User {0} joined lobby {1}: {2} (Slot was {3})", playerSession.m_UserID, LobbyID, true, slotIndex);
 			return true;
+			}
+			finally
+			{
+				g_SlotLock.Release();
+			}
 		}
 
-		public async void RemoveMember(LobbyMember member)
+		public async Task RemoveMember(LobbyMember member)
 		{
 			// TODO_LOBBY: Optimize this
 			Int64 UserID = member.UserID;			
@@ -653,7 +664,7 @@ namespace GenOnlineService
 
 			LobbyMember placeholderMember = new LobbyMember(this, null, -1, String.Empty, String.Empty, 0, -1, -1, -1, EPlayerType.SLOT_OPEN, member.SlotIndex, true);
 			Members[member.SlotIndex] = placeholderMember;
-			TimeMemberLeft[member.SlotIndex] = DateTime.Now;
+			TimeMemberLeft[UserID] = DateTime.Now;
 
 			// send signal to disconnect (only if not ingame, ingame we let the client handle it so a service disconnect doesnt end the game)
 			if (State != ELobbyState.INGAME)
@@ -730,7 +741,7 @@ namespace GenOnlineService
 			m_bIsDirty = true;
 		}
 
-		public async void DirtyRetransmitToSingleMember(Int64 targetUserID)
+		public async Task DirtyRetransmitToSingleMember(Int64 targetUserID)
 		{
 			var session = WebSocketManager.GetDataFromUser(targetUserID);
 			if (session != null)
@@ -868,7 +879,7 @@ namespace GenOnlineService
 			return m_cachedAtStart_numAI > 0;
 		}
 
-		public async void UpdateState(ELobbyState state)
+		public async Task UpdateState(ELobbyState state)
 		{
 			State = state;
 
@@ -977,6 +988,7 @@ namespace GenOnlineService
 		public EPlayerType SlotState { get; private set; } = 0;
 		public UInt16 SlotIndex { get; private set; } = 0;
 		public string Region { get; private set; } = "Unknown";
+		public string MiddlewareUserID { get; private set; } = String.Empty;
 
 		[JsonIgnore] // cant serialize refs
 		private WeakReference<Lobby?> CurrentLobby = new(null);
@@ -1004,6 +1016,16 @@ namespace GenOnlineService
 			HasMap = bHasMap_in;
 			SlotState = SlotState_in;
 			SlotIndex = SlotIndex_in;
+
+			// default slots are created with null
+			if (owningSession != null)
+			{
+				MiddlewareUserID = owningSession.GetMiddlewareID();
+			}
+			else
+			{
+				MiddlewareUserID = String.Empty;
+			}
 
 			IsReady = false;
 			Region = owningSession == null ? "Unknown" : owningSession.GetFullContinentName();
@@ -1162,11 +1184,11 @@ namespace GenOnlineService
 			return newLobbyID;
 		}
 
-		public static void Tick()
+		public static async Task Tick()
 		{
 			foreach (var kvPair in m_dictLobbies)
 			{
-				kvPair.Value.Tick();
+				await kvPair.Value.Tick();
 			}
 		}
 
@@ -1325,7 +1347,7 @@ namespace GenOnlineService
 			return lstLobbies;
 		}
 
-		public static void LeaveSpecificLobby(Int64 userID, Int64 lobbyID)
+		public static async Task LeaveSpecificLobby(Int64 userID, Int64 lobbyID)
 		{
 			Lobby? targetLobby = GetLobby(lobbyID);
 			if (targetLobby != null)
@@ -1334,12 +1356,12 @@ namespace GenOnlineService
 				if (memberEntry != null)
 				{
 					Console.WriteLine("User {0} Leave Specific Lobby", userID);
-					targetLobby.RemoveMember(memberEntry);
+					await targetLobby.RemoveMember(memberEntry);
 				}
 			}
 		}
 
-		public static void LeaveAnyLobby(Int64 userID)
+		public static async Task LeaveAnyLobby(Int64 userID)
 		{
 			foreach (Lobby lobbyInst in m_dictLobbies.Values)
 			{
@@ -1347,7 +1369,7 @@ namespace GenOnlineService
 				if (member != null)
 				{
 					Console.WriteLine("User {0} Leave Any Lobby", userID);
-					lobbyInst.RemoveMember(member);
+					await lobbyInst.RemoveMember(member);
 				}
 			}
 		}
@@ -1357,7 +1379,7 @@ namespace GenOnlineService
 			if (lobby.State != ELobbyState.COMPLETE)
 			{
 				// make done
-				lobby.UpdateState(ELobbyState.COMPLETE);
+				await lobby.UpdateState(ELobbyState.COMPLETE);
 
 				// attempt to commit it
 				await Database.Functions.Lobby.CommitLobbyToMatchHistory(GlobalDatabaseInstance.g_Database, lobby);
