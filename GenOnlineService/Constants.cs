@@ -240,10 +240,13 @@ namespace GenOnlineService
 
 		public static async Task Tick()
 		{
-			foreach (var kvPair in m_dictUserSessions)
-			{
-				await kvPair.Value.TickWebsocket();
-			}
+			// Give the entire tick a 20 ms deadline. All users drain concurrently via
+			// Task.WhenAll, so a slow/stuck client cannot delay others. If the deadline
+			// fires, the CancellationToken propagates into each in-flight SendAsync and
+			// into the dequeue loop guard, so the stuck user is skipped and their unsent
+			// messages stay in the queue for the next tick.
+			using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
+			await Task.WhenAll(m_dictUserSessions.Values.Select(sess => sess.TickWebsocket(cts.Token)));
 		}
 
 		public static async Task CheckForTimeouts()
@@ -635,7 +638,7 @@ namespace GenOnlineService
 			return websocketForUser;
 		}
 
-		public async Task TickWebsocket()
+		public async Task TickWebsocket(CancellationToken tickToken = default)
 		{
 			// Do we have a connection to send on?
 			UserWebSocketInstance websocketForUser = WebSocketManager.GetWebSocketForSession(this);
@@ -644,9 +647,9 @@ namespace GenOnlineService
 				const int maxMessagesSendPerFrame = 50;
 				int messagesSent = 0;
 				// start dequeing and sending
-				while (messagesSent < maxMessagesSendPerFrame && m_lstPendingWebsocketSends.TryDequeue(out byte[] packetData))
+				while (!tickToken.IsCancellationRequested && messagesSent < maxMessagesSendPerFrame && m_lstPendingWebsocketSends.TryDequeue(out byte[] packetData))
 				{
-					await websocketForUser.SendAsync(packetData, WebSocketMessageType.Text);
+					await websocketForUser.SendAsync(packetData, WebSocketMessageType.Text, tickToken);
 					++messagesSent;
 				}
 			}
@@ -846,7 +849,7 @@ namespace GenOnlineService
 			return Environment.TickCount64 - m_lastPingTime;
 		}
 
-		public async Task SendAsync(byte[] buffer, WebSocketMessageType messageType)
+		public async Task SendAsync(byte[] buffer, WebSocketMessageType messageType, CancellationToken externalToken = default)
 		{
 			if (m_SockInternal != null)
 			{
@@ -882,7 +885,8 @@ namespace GenOnlineService
 					}
 					*/
 
-					using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+					using var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
+					cts.CancelAfter(TimeSpan.FromMilliseconds(500));
 					await m_SockInternal.SendAsync(buffer, messageType, true, cts.Token);
 				}
 				catch
