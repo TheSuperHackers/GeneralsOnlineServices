@@ -949,7 +949,11 @@ namespace GenOnlineService
 				{
 					try
 					{
-						await DailyStatsManager.SaveToDB();
+						using (var scope = app.Services.CreateScope())
+						{
+							var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+							await DailyStatsManager.SaveToDB(db);
+						}
 					}
 					catch (Exception ex)
 					{
@@ -973,8 +977,11 @@ namespace GenOnlineService
 			g_tokenGenerator = new JwtTokenGenerator(builder.Configuration);
 
 			// load daily stats
-			await DailyStatsManager.LoadFromDB();
-
+			using (var scope = app.Services.CreateScope())
+			{
+				var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+				await DailyStatsManager.LoadFromDB(db);
+			}
 
 			app.Run();
 

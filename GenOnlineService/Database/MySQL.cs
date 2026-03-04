@@ -50,54 +50,6 @@ using static Database.Functions;
 using static Database.Functions.Auth;
 using static Database.Functions.Lobby;
 
-public class AppDbContext : DbContext
-{
-	public DbSet<User> Users => Set<User>();
-
-	public AppDbContext(DbContextOptions<AppDbContext> options)
-		: base(options)
-	{
-	}
-
-	protected override void OnModelCreating(ModelBuilder modelBuilder)
-	{
-		// Fluent configuration here
-		base.OnModelCreating(modelBuilder);
-
-		// Fluent config for user
-		modelBuilder.Entity<User>(entity =>
-		{
-			entity.ToTable("users");
-
-			entity.Property(e => e.ID).HasColumnName("user_id");
-
-			entity.Property(e => e.AccountType).HasColumnName("account_type");
-			entity.Property(e => e.SteamID).HasColumnName("steam_id");
-			entity.Property(e => e.DiscordID).HasColumnName("discord_id");
-			entity.Property(e => e.DiscordUsername).HasColumnName("discord_username").HasColumnType("varchar(32)"); ;
-			entity.Property(e => e.GameReplaysID).HasColumnName("gamereplays_id");
-			entity.Property(e => e.GameReplaysUsername).HasColumnName("gamereplays_username").HasColumnType("varchar(32)"); ;
-			entity.Property(e => e.DisplayName).HasColumnName("displayname").HasColumnType("varchar(32)"); ;
-			entity.Property(e => e.LastLogin).HasColumnName("lastlogin").HasColumnType("datetime(6)");
-			entity.Property(e => e.LastIPAddress).HasColumnName("last_ip").HasColumnType("varchar(45)"); ;
-			entity.Property(e => e.ClientID).HasColumnName("client_id");
-			entity.Property(e => e.FavoriteColor).HasColumnName("favorite_color");
-			entity.Property(e => e.FavoriteSide).HasColumnName("favorite_side");
-			entity.Property(e => e.FavoriteMap).HasColumnName("favorite_map").HasColumnType("varchar(128)"); ;
-			entity.Property(e => e.FavoriteStartingMoney).HasColumnName("favorite_starting_money");
-			entity.Property(e => e.LimitSuperweapons).HasColumnName("favorite_limit_superweapons");
-			entity.Property(e => e.IsAdmin).HasColumnName("admin");
-			entity.Property(e => e.IsBanned).HasColumnName("banned");
-			entity.Property(e => e.EloRating).HasColumnName("elo_rating");
-			entity.Property(e => e.EloNumberOfMatches).HasColumnName("elo_num_matches");
-			entity.Property(e => e.BanReason).HasColumnName("ban_reason").HasColumnType("varchar(128)"); ;
-			entity.Property(e => e.BannedBy).HasColumnName("banned_by").HasColumnType("varchar(50)"); ;
-			entity.Property(e => e.BanVerifiedBy).HasColumnName("ban_verified_by").HasColumnType("varchar(50)"); ;
-			entity.Property(e => e.BanAliases).HasColumnName("ban_alises").HasColumnType("varchar(50)"); ;
-		});
-	}
-}
-
 public enum EAccountType
 {
 	Unknown = -1,
@@ -107,6 +59,8 @@ public enum EAccountType
 	Reserved2 = 3,
 	GameReplays = 4,
 }
+
+
 
 public class User
 {
@@ -153,12 +107,7 @@ public class User
 }
 
 
-public class DailyStats
-{
-	public const int numSides = 12;
-    public int[] matches { get; set; } = new int[12] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-    public int[] wins { get; set; } = new int[12] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-}
+
 
 /*
  * 2, // USA
@@ -175,49 +124,7 @@ public class DailyStats
         13 // GLA Stealth
 */
 
-public static class DailyStatsManager
-{
-	public static DailyStats g_Stats = new();
 
-	public static async Task LoadFromDB()
-	{
-        g_Stats = await Database.Functions.Auth.LoadDailyStats(GlobalDatabaseInstance.g_Database);
-    }
-
-	public static async Task SaveToDB()
-	{
-        await Database.Functions.Auth.StoreDailyStats(GlobalDatabaseInstance.g_Database, g_Stats);
-    }
-
-	public static void RegisterOutcome(int army, bool bWon)
-	{
-		try
-		{
-            int armyIndex = army - 2; // teams start at 2, so substract for array indices
-
-            if (armyIndex >= 0 && armyIndex <= 11)
-            {
-                ++g_Stats.matches[armyIndex];
-
-                if (bWon)
-                {
-                    ++g_Stats.wins[armyIndex];
-                }
-
-				// clamp to a sane value, just incase (wins can never be more than matches)
-				if (g_Stats.wins[armyIndex] > g_Stats.matches[armyIndex])
-				{
-					g_Stats.wins[armyIndex] = g_Stats.matches[armyIndex];
-
-                }
-            }
-        }
-		catch (Exception ex)
-		{
-			Console.WriteLine($"[ERROR] RegisterOutcome failed: {ex.Message}");
-		}
-	}
-}
 
 namespace Database
 {
@@ -1322,48 +1229,7 @@ namespace Database
 				);
 			}
 
-			public async static Task<DailyStats> LoadDailyStats(MySQLInstance m_Inst)
-			{
-				DailyStats ds = new();
-				
-                int day_of_year = DateTime.Now.DayOfYear;
-                var res = await m_Inst.Query("SELECT stats_structure FROM daily_stats WHERE day_of_year=@day_of_year LIMIT 1;",
-                new()
-                {
-                    { "@day_of_year", day_of_year }
-                }
-                );
-
-                if (res.NumRows() == 0)
-                {
-                    return ds;
-                }
-
-				try
-				{
-                    string? jsonData = Convert.ToString(res.GetRow(0)["stats_structure"]);
-					if (jsonData != null)
-					{
-                        DailyStats? statsDeserialized = JsonSerializer.Deserialize<DailyStats>(jsonData);
-
-						if (statsDeserialized != null)
-						{
-							ds = statsDeserialized;
-                        }
-
-						return ds;
-                    }
-                }
-				catch
-				{
-					return new DailyStats();
-				}
-                
-
-				return new DailyStats();
-            }
-
-			public async static Task StoreDailyStats(MySQLInstance m_Inst, DailyStats stats)
+			public async static Task StoreDailyStats(MySQLInstance m_Inst, DailyStatsStructure stats)
 			{
 				string strJSON = JsonSerializer.Serialize(stats);
 

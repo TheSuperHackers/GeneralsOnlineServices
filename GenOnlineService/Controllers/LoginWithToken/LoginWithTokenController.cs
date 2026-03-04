@@ -49,10 +49,11 @@ namespace GenOnlineService.Controllers.LoginWithToken
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class LoginWithToken : ControllerBase
 	{
+		private readonly AppDbContext _db;
 
-		public LoginWithToken()
+		public LoginWithToken(AppDbContext db)
 		{
-
+			_db = db;
 		}
 
 		[HttpPost(Name = "PostLoginWithToken")]
