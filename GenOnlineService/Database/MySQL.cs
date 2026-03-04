@@ -62,49 +62,7 @@ public enum EAccountType
 
 
 
-public class User
-{
-	public Int64 ID { get; set; }
-	public EAccountType AccountType { get; set; } = EAccountType.Unknown;
 
-	// Steam, only present if AccountType is Steam
-	public Int64 SteamID { get; set; } = -1;
-
-	// Discord, only present if AccountType is Discord
-	public Int64 DiscordID { get; set; } = -1;
-	public string DiscordUsername { get; set; } = String.Empty;
-
-	// GameReplays, only present if AccountType is GameReplays
-	public Int64 GameReplaysID { get; set; } = -1;
-	public string GameReplaysUsername { get; set; } = String.Empty;
-
-
-	public string DisplayName { get; set; } = "";
-	public DateTime LastLogin { get; set; } = DateTime.UnixEpoch;
-	public string LastIPAddress { get; set; } = String.Empty;
-	public int ClientID { get; set; } = -1;
-
-	// Gameplay Favorites
-	public int FavoriteColor { get; set; } = -1;
-	public int FavoriteSide { get; set; } = -1;
-	public string FavoriteMap { get; set; } = String.Empty;
-	public int FavoriteStartingMoney { get; set; } = -1;
-	public bool LimitSuperweapons { get; set; } = false;
-
-	// User Permissions
-	public bool IsAdmin { get; set; } = false;
-	public bool IsBanned { get; set; } = false;
-
-	// ELO
-	public int EloRating { get; set; } = EloConfig.BaseRating;
-	public int EloNumberOfMatches { get; set; } = 0;
-
-	// Bans
-	public string BanReason { get; set; } = String.Empty;
-	public string BannedBy{ get; set; } = String.Empty;
-	public string BanVerifiedBy { get; set; } = String.Empty;
-	public string BanAliases { get; set; } = String.Empty;
-}
 
 
 
