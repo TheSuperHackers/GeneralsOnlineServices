@@ -93,80 +93,75 @@ namespace GenOnlineService.Controllers.LoginWithToken
 			{
 				var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonData, options);
 
-				if (data != null && !data.ContainsKey("client_id"))
+				// TODO_EFCORE: remove client_id from the client, token has it, and is more trustworthy
+				KnownClients.EKnownClients clientID = TokenHelper.GetClientID(this);
+				if (clientID == KnownClients.EKnownClients.unknown)
 				{
 					result.result = EPendingLoginState.LoginFailed;
 					Response.StatusCode = (int)HttpStatusCode.Unauthorized;
 				}
 				else
 				{
-					if (data != null && data.ContainsKey("client_id"))
+					byte[] respNonce = new byte[32];
+					using (RandomNumberGenerator rng = RandomNumberGenerator.Create()) { rng.GetBytes(respNonce); }
+
+					// TODO_JWT: Look refresh token up in the revoked list
+					// TODO_JWT: invalidate old refresh and session tokens
+
+					// If you reach here, the refresh token was valid because auth happens globally
+					if (Program.g_tokenGenerator != null)
 					{
-						byte[] respNonce = new byte[32];
-						using (RandomNumberGenerator rng = RandomNumberGenerator.Create()) { rng.GetBytes(respNonce); }
+						// start their session etc
+						Int64 user_id = TokenHelper.GetUserID(this);
+						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
 
-						// TODO_JWT: Look refresh token up in the revoked list
-						// TODO_JWT: invalidate old refresh and session tokens
-
-						// If you reach here, the refresh token was valid because auth happens globally
-						string? clientID = data["client_id"].GetString();
-
-						if (clientID != null && Program.g_tokenGenerator != null)
+						// Game clients should register the user device
+						if (sessionType == EUserSessionType.GameClient)
 						{
-							// start their session etc
-							Int64 user_id = TokenHelper.GetUserID(this);
-
 							string hwid_0 = data.ContainsKey("reserved_0") ? data["reserved_0"].ToString() : "NONE";
 							string hwid_1 = data.ContainsKey("reserved_1") ? data["reserved_1"].ToString() : "NONE";
 							string hwid_2 = data.ContainsKey("reserved_2") ? data["reserved_2"].ToString() : "NONE";
 							await Database.Functions.Auth.RegisterUserDevice(GlobalDatabaseInstance.g_Database, user_id, hwid_0, hwid_1, hwid_2, ipAddr);
-
-							// ban check
-							bool bIsBanned = await Database.Users.IsUserBanned(_db, user_id);
-							if (bIsBanned)
-							{
-								result.result = EPendingLoginState.LoginFailed;
-								Response.StatusCode = (int)HttpStatusCode.Locked;
-								return result;
-							}
-
-							string exe_crc = data.ContainsKey("exe_crc") ? data["exe_crc"].ToString() : "NONE";
-							Helpers.RegisterInitialPlayerExeCRC(user_id, exe_crc);
-
-							string strDisplayName = await Database.Users.GetDisplayName(_db, user_id);
-							await Database.Functions.Auth.SetUsedLoggedIn(GlobalDatabaseInstance.g_Database, user_id, clientID);
-
-							bool bIsAdmin = await Database.Users.IsUserAdmin(_db, user_id);
-
-							result.result = EPendingLoginState.LoginSuccess;
-
-							// extend token
-							// TODO_TODAY_JWT: just get clientID from token
-							var sessiontoken = Program.g_tokenGenerator.GenerateToken(strDisplayName, user_id, ipAddr, Program.JwtTokenGenerator.ETokenType.Session, clientID, bIsAdmin);
-							var refreshtoken = Program.g_tokenGenerator.GenerateToken(strDisplayName, user_id, ipAddr, Program.JwtTokenGenerator.ETokenType.Refresh, clientID, false);
-							result.session_token = sessiontoken;
-							result.refresh_token = refreshtoken;
-
-							result.user_id = user_id;
-							result.display_name = strDisplayName;
-
-							result.ws_uri = Program.GetWebSocketAddress(bSecureWS);
-
-							// clear cached data, its a refresh websocket connection
-							WebSocketManager.ClearDataFromUser(user_id);
 						}
-						else
+
+						// ban check
+						bool bIsBanned = await Database.Users.IsUserBanned(_db, user_id);
+						if (bIsBanned)
 						{
 							result.result = EPendingLoginState.LoginFailed;
-							Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+							Response.StatusCode = (int)HttpStatusCode.Locked;
 							return result;
 						}
+
+						string exe_crc = data.ContainsKey("exe_crc") ? data["exe_crc"].ToString() : "NONE";
+						Helpers.RegisterInitialPlayerExeCRC(user_id, exe_crc);
+
+						string strDisplayName = await Database.Users.GetDisplayName(_db, user_id);
+						await Database.Functions.Auth.SetUsedLoggedIn(GlobalDatabaseInstance.g_Database, user_id, clientID, sessionType);
+
+						bool bIsAdmin = await Database.Users.IsUserAdmin(_db, user_id);
+
+						result.result = EPendingLoginState.LoginSuccess;
+
+						// extend token
+						// TODO_TODAY_JWT: just get clientID from token
+						var sessiontoken = Program.g_tokenGenerator.GenerateToken(strDisplayName, user_id, ipAddr, Program.JwtTokenGenerator.ETokenType.Session, clientID, sessionType, bIsAdmin);
+						var refreshtoken = Program.g_tokenGenerator.GenerateToken(strDisplayName, user_id, ipAddr, Program.JwtTokenGenerator.ETokenType.Refresh, clientID, sessionType, false);
+						result.session_token = sessiontoken;
+						result.refresh_token = refreshtoken;
+
+						result.user_id = user_id;
+						result.display_name = strDisplayName;
+
+						result.ws_uri = Program.GetWebSocketAddress(bSecureWS);
+
+						// clear cached data, its a refresh websocket connection
+						WebSocketManager.ClearDataFromUser(user_id, sessionType);
 					}
 					else
 					{
-						// TODO: Log this
-						//sess.SendResponseAsync(sess.Response.MakeGetResponse("Missing Key"));
-
+						result.result = EPendingLoginState.LoginFailed;
+						Response.StatusCode = (int)HttpStatusCode.Unauthorized;
 						return result;
 					}
 				}

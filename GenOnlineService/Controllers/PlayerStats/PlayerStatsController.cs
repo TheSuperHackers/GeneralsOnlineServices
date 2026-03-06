@@ -89,11 +89,11 @@ namespace GenOnlineService.Controllers
 				PropertyNameCaseInsensitive = true
 			};
 
-			// get from cache
-			UserSession? userSession = WebSocketManager.GetDataFromUser(userID);
+			// get from cache (just get any user, all sessions will have stats stored against them)
+			SharedUserData? userData = WebSocketManager.GetSharedDataForUser(userID);
 
 			// if user is offline, hit DB, could be a friends list inspection for example
-			if (userSession == null)
+			if (userData == null)
 			{
 				PlayerStats playerStats = await Database.Functions.Auth.GetPlayerStats(GlobalDatabaseInstance.g_Database, userID);
 
@@ -108,13 +108,13 @@ namespace GenOnlineService.Controllers
 
 				return result;
 			}
-			else if (userSession.GameStats == null) // if the session exists but no stats exist, this is a problem
+			else if (userData.GameStats == null) // if the session exists but no stats exist, this is a problem
 			{
 				Response.StatusCode = (int)HttpStatusCode.NotFound;
 				return result;
 			}
 
-			result.stats = userSession.GameStats;
+			result.stats = userData.GameStats;
 			return result;
 		}
 
@@ -140,19 +140,19 @@ namespace GenOnlineService.Controllers
                 // process each user
                 foreach (Int64 userID in inputData.user_ids)
                 {
-					// get from cache
-					UserSession? userSession = WebSocketManager.GetDataFromUser(userID);
+					// get all sessions for this user
+					SharedUserData userData = WebSocketManager.GetSharedDataForUser(userID);
 
 					// NOTE: Batch is only supported for ONLINE users, DB will never be looked up
-					if (userSession != null)
-                    {
-                        if (userSession.GameStats != null)
-                        {
-                            result.stats.Add(userSession.GameStats);
+					if (userData != null)
+					{
+						if (userData.GameStats != null)
+						{
+							result.stats.Add(userData.GameStats);
 
-                        }
-                    }
-                }
+						}
+					}
+				}
             }
 
             return result;
@@ -176,7 +176,8 @@ namespace GenOnlineService.Controllers
 				{
 					Int64 user_id = TokenHelper.GetUserID(this);
 
-					if (user_id != -1)
+					EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 					{
 						List<JsonElement>? jsonReqData = JsonSerializer.Deserialize<List<JsonElement>>(jsonData, options);
 
@@ -196,12 +197,12 @@ namespace GenOnlineService.Controllers
 											// update cache too
 											if (user_id != -1)
 											{
-												UserSession? sourceSession = WebSocketManager.GetDataFromUser(user_id);
+												SharedUserData? userData = WebSocketManager.GetSharedDataForUser(user_id);
 
-												if (sourceSession != null)
+												if (userData != null)
 												{
 #pragma warning disable CS8602 // Dereference of a possibly null reference.
-													sourceSession.GameStats.ProcessFromDB((EStatIndex)stat_id, statValInt);
+													userData.GameStats.ProcessFromDB((EStatIndex)stat_id, statValInt);
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 												}
 											}

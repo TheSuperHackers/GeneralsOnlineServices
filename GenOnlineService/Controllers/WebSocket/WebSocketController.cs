@@ -107,9 +107,26 @@ namespace GenOnlineService.Controllers
 
 			bool bIsAdmin = HttpContext.User.IsInRole("Admin");
 
-			string client_id = firstEntryClientID.Value;
+			KnownClients.EKnownClients client_id = KnownClients.EKnownClients.unknown;
+			if (int.TryParse(firstEntryClientID.Value, out int clientIDInt32))
+			{
+				// Validate if the int corresponds to a defined enum value
+				if (System.Enum.IsDefined(typeof(KnownClients.EKnownClients), clientIDInt32))
+				{
+					client_id = (KnownClients.EKnownClients)clientIDInt32;
+				}
+			}
+
+			// if unknown, error
+			if (client_id == KnownClients.EKnownClients.unknown)
+			{
+				HttpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+				return;
+			}
+
 			UserWebSocketInstance wsSess = await WebSocketManager.CreateSession(
 				_db,
+				EUserSessionType.GameClient,
 				bIsReconnect,
 				user_id,
 				client_id,
@@ -175,19 +192,19 @@ namespace GenOnlineService.Controllers
 				// slice only the valid part, no extra allocation
 				var segment = new ArraySegment<byte>(buffer, 0, receiveResult.Count);
 
-				UserSession? sourceUserData = WebSocketManager.GetDataFromUser(wsSess.m_UserID);
+				UserSession? sourceUserData = WebSocketManager.GetSessionFromUser(wsSess.m_UserID, wsSess.m_SessionType);
 				await ProcessWSMessage(wsSess, sourceUserData, receiveResult, segment);
 			}
 
 			Console.ForegroundColor = ConsoleColor.Cyan;
-			UserSession? sourceData = WebSocketManager.GetDataFromUser(user_id);
+			SharedUserData? sourceData = WebSocketManager.GetSharedDataForUser(user_id);
 			Console.WriteLine("WEBSOCKET DISCONNECT FOR {0}", sourceData == null ? "NULL" : sourceData.m_strDisplayName);
 			Console.ForegroundColor = ConsoleColor.Gray;
 
 			// close the session
 			if (wsSess != null)
 			{
-				await WebSocketManager.DeleteSession(user_id, wsSess, false);
+				await WebSocketManager.DeleteSession(user_id, wsSess.m_SessionType, wsSess, false);
 			}
 
 			// do close (if in the correct state)
@@ -211,9 +228,11 @@ namespace GenOnlineService.Controllers
 
 		private async Task ProcessWSMessage(UserWebSocketInstance sourceWS, UserSession sourceUserSession, WebSocketReceiveResult receiveResult, ArraySegment<byte> buffer)
 		{
+			SharedUserData sourceUserData = WebSocketManager.GetSharedDataForUser(sourceUserSession.m_UserID);
+
 			if (receiveResult.MessageType == WebSocketMessageType.Close)
 			{
-				await WebSocketManager.DeleteSession(sourceWS.m_UserID, sourceWS, false);
+				await WebSocketManager.DeleteSession(sourceWS.m_UserID, sourceUserSession.GetSessionType(), sourceWS, false);
 				return;
 			}
 
@@ -284,26 +303,25 @@ namespace GenOnlineService.Controllers
 					if (chatMessage != null)
 					{
 						// must be online & friends
-						UserSession? targetSession = WebSocketManager.GetDataFromUser(chatMessage.target_user_id);
 
-						if (targetSession != null)
+						SharedUserData? targetUserData = WebSocketManager.GetSharedDataForUser(chatMessage.target_user_id);
+
+						if (targetUserData != null)
 						{
-							if (sourceUserSession.GetSocialContainer().Friends.Contains(chatMessage.target_user_id)
-								&& targetSession.GetSocialContainer().Friends.Contains(sourceUserSession.m_UserID))
+							if (sourceUserData.GetSocialContainer().Friends.Contains(chatMessage.target_user_id)
+								&& targetUserData.GetSocialContainer().Friends.Contains(sourceUserSession.m_UserID))
 							{
-								// ok, they can chat, send the message to both of them
+								// make websocket msg
 								WebSocketMessage_Social_FriendChatMessage_Outbound outboundMsg = new();
 								outboundMsg.msg_id = (int)EWebSocketMessageID.SOCIAL_FRIEND_CHAT_MESSAGE_SERVER_TO_CLIENT;
 								outboundMsg.source_user_id = sourceWS.m_UserID;
-								outboundMsg.target_user_id = targetSession.m_UserID;
-								outboundMsg.message = String.Format("{0}: {1}", sourceUserSession.m_strDisplayName, chatMessage.message);
-
-								// send to both
+								outboundMsg.target_user_id = chatMessage.target_user_id;
+								outboundMsg.message = String.Format("{0}: {1}", sourceUserData.m_strDisplayName, chatMessage.message);
 								byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outboundMsg));
 
-								await sourceWS.SendAsync(bytesJSON, WebSocketMessageType.Text);
-
-								targetSession.QueueWebsocketSend(bytesJSON);
+								// send to both on all websockets
+								WebsocketHelper.SendToAllSessionsOfUser(chatMessage.target_user_id, bytesJSON);
+								WebsocketHelper.SendToAllSessionsOfUser(sourceWS.m_UserID, bytesJSON);
 							}
 						}
 						else
@@ -341,19 +359,19 @@ namespace GenOnlineService.Controllers
 
 						if (chatMessage.action)
 						{
-							outboundMsg.message = String.Format("{0} {1}", sourceUserSession.m_strDisplayName, chatMessage.message);
+							outboundMsg.message = String.Format("{0} {1}", sourceUserData.m_strDisplayName, chatMessage.message);
 							outboundMsg.admin = false; // dont care for actions
 						}
 						else
 						{
-							if (sourceUserSession.IsAdmin())
+							if (sourceUserData.IsAdmin())
 							{
-								outboundMsg.message = String.Format("[\u2605\u2605GO STAFF\u2605\u2605]    [{0}] {1}", sourceUserSession.m_strDisplayName, chatMessage.message);
+								outboundMsg.message = String.Format("[\u2605\u2605GO STAFF\u2605\u2605]    [{0}] {1}", sourceUserData.m_strDisplayName, chatMessage.message);
 								outboundMsg.admin = true;
 							}
 							else
 							{
-								outboundMsg.message = String.Format("[{0}] {1}", sourceUserSession.m_strDisplayName, chatMessage.message);
+								outboundMsg.message = String.Format("[{0}] {1}", sourceUserData.m_strDisplayName, chatMessage.message);
 								outboundMsg.admin = false;
 							}
 						}
@@ -364,18 +382,26 @@ namespace GenOnlineService.Controllers
 						byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outboundMsg));
 
 						// send it to everyone in the same room
-						foreach (KeyValuePair<Int64, UserSession> sessionData in WebSocketManager.GetUserDataCache())
+						foreach (var sessionDataByClient in WebSocketManager.GetUserDataCache())
 						{
-							UserSession targetSess = sessionData.Value;
-							if (targetSess.networkRoomID == sourceUserSession.networkRoomID)
+							foreach (var sessionData in sessionDataByClient.Value)
 							{
-								// is it blocked by either side? dont deliver the chat
-								bool bBlocked = targetSess.GetSocialContainer().Blocked.Contains(sourceUserSession.m_UserID) ||
-									sourceUserSession.GetSocialContainer().Blocked.Contains(targetSess.m_UserID);
-
-								if (!bBlocked)
+								UserSession targetSess = sessionData.Value;
+								if (targetSess.networkRoomID == sourceUserSession.networkRoomID)
 								{
-									targetSess.QueueWebsocketSend(bytesJSON);
+									SharedUserData? targetUserSharedData = WebSocketManager.GetSharedDataForUser(targetSess.m_UserID);
+
+									if (targetUserSharedData != null)
+									{
+										// is it blocked by either side? dont deliver the chat
+										bool bBlocked = targetUserSharedData.GetSocialContainer().Blocked.Contains(sourceUserSession.m_UserID) ||
+											sourceUserData.GetSocialContainer().Blocked.Contains(targetSess.m_UserID);
+
+										if (!bBlocked)
+										{
+											targetSess.QueueWebsocketSend(bytesJSON);
+										}
+									}
 								}
 							}
 						}
@@ -383,7 +409,7 @@ namespace GenOnlineService.Controllers
 						// send message to discord
 						if (Program.g_Discord != null && chatMessage.message != null)
 						{
-							Program.g_Discord.SendNetworkRoomChat(sourceUserSession.networkRoomID, sourceUserSession.m_UserID, sourceUserSession.m_strDisplayName, chatMessage.message);
+							Program.g_Discord.SendNetworkRoomChat(sourceUserSession.networkRoomID, sourceUserSession.m_UserID, sourceUserData.m_strDisplayName, chatMessage.message);
 						}
 					}
 				}
@@ -446,10 +472,10 @@ namespace GenOnlineService.Controllers
 						if (nameChangeRequest.name.Length >= 3 && nameChangeRequest.name.Length <= 16)
 						{
 							await Database.Functions.Lobby.UpdateDisplayName(GlobalDatabaseInstance.g_Database, sourceUserSession.m_UserID, nameChangeRequest.name);
-							sourceUserSession.m_strDisplayName = nameChangeRequest.name;
+							sourceUserData.m_strDisplayName = nameChangeRequest.name;
 							await WebSocketManager.MarkRoomMemberListAsDirty(sourceUserSession.networkRoomID);
 						}
-					}
+					}	
 				}
 				else if (msgID == EWebSocketMessageID.LOBBY_CHANGE_PASSWORD)
 				{
@@ -508,7 +534,7 @@ namespace GenOnlineService.Controllers
 
 							if (chatMessage.action)
 							{
-								outboundMsg.message = String.Format("{0} {1}", sourceUserSession.m_strDisplayName, chatMessage.message);
+								outboundMsg.message = String.Format("{0} {1}", sourceUserData.m_strDisplayName, chatMessage.message);
 							}
 							else if (chatMessage.announcement)
 							{
@@ -516,7 +542,7 @@ namespace GenOnlineService.Controllers
 							}
 							else
 							{
-								outboundMsg.message = String.Format("[{0}] {1}", sourceUserSession.m_strDisplayName, chatMessage.message);
+								outboundMsg.message = String.Format("[{0}] {1}", sourceUserData.m_strDisplayName, chatMessage.message);
 							}
 
 							outboundMsg.action = chatMessage.action;
@@ -607,12 +633,17 @@ namespace GenOnlineService.Controllers
 					// Serialize once before broadcasting
 					byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(startCommand));
 
-					foreach (KeyValuePair<Int64, UserSession> sessionData in WebSocketManager.GetUserDataCache())
+					foreach (LobbyMember lobbyMember in lobbyInfo.Members)
 					{
-						UserSession sess = sessionData.Value;
-						if (sess.currentLobbyID == sourceUserSession.currentLobbyID)
+						if (lobbyMember != null)
 						{
-							sess.QueueWebsocketSend(bytesJSON);
+							if (lobbyMember.GetSession().TryGetTarget(out UserSession? sess))
+							{
+								if (sess != null)
+								{
+									sess.QueueWebsocketSend(bytesJSON);
+								}
+							}
 						}
 					}
 				}
@@ -651,12 +682,17 @@ namespace GenOnlineService.Controllers
 					// Serialize once before broadcasting
 					byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(startCommand));
 
-					foreach (KeyValuePair<Int64, UserSession> sessionData in WebSocketManager.GetUserDataCache())
+					foreach (LobbyMember lobbyMember in lobbyInfo.Members)
 					{
-						UserSession sess = sessionData.Value;
-						if (sess.currentLobbyID == sourceUserSession.currentLobbyID)
+						if (lobbyMember != null)
 						{
-							sess.QueueWebsocketSend(bytesJSON);
+							if (lobbyMember.GetSession().TryGetTarget(out UserSession? sess))
+							{
+								if (sess != null)
+								{
+									sess.QueueWebsocketSend(bytesJSON);
+								}
+							}
 						}
 					}
 				}
@@ -689,7 +725,7 @@ namespace GenOnlineService.Controllers
 						// And everything is in text.
 
 						// find the dest players connection
-						UserSession? targetSession = WebSocketManager.GetDataFromUser(signalingRequest.target_user_id);
+						UserSession? targetSession = WebSocketManager.GetSessionFromUser(signalingRequest.target_user_id, EUserSessionType.GameClient); // signalling NEEDS a game client session
 						if (targetSession != null)
 						{
 							Lobby? lobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);
@@ -733,7 +769,7 @@ namespace GenOnlineService.Controllers
 						// And everything is in text.
 
 						// find the dest players connection
-						UserSession? targetSession = WebSocketManager.GetDataFromUser(signal.target_user_id);
+						UserSession? targetSession = WebSocketManager.GetSessionFromUser(signal.target_user_id, EUserSessionType.GameClient); // network signals only goto game clients
 						if (targetSession != null)
 						{
 							Lobby? lobby = _lobbyManager.GetLobby(sourceUserSession.currentLobbyID);

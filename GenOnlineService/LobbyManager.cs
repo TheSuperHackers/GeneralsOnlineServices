@@ -159,8 +159,10 @@ namespace GenOnlineService
 						outcome.missing_connections = lstMissingConnections;
 					}
 
+					// TODO_EFCORE: Later, these should really use lobby list instead of getting session from ID
+
 					// send to host
-					UserSession? hostSession = WebSocketManager.GetDataFromUser(Owner);
+					UserSession? hostSession = WebSocketManager.GetSessionFromUser(Owner, EUserSessionType.GameClient); // host should be a game client
 					if (hostSession != null)
 					{
 						byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outcome));
@@ -460,7 +462,7 @@ namespace GenOnlineService
 				{
 					if (memberEntry.GetSession().TryGetTarget(out UserSession? session))
 					{
-						UserSession? sess = WebSocketManager.GetDataFromUser(session.m_UserID);
+						UserSession? sess = WebSocketManager.GetSessionFromUser(session.m_UserID, session.GetSessionType());
 						if (sess != null)
 						{
 							Console.WriteLine("[DIRTY LOBBY] Sending WS lobby update for lobby {0}", LobbyID);
@@ -513,12 +515,12 @@ namespace GenOnlineService
 				// NOTE: Only check this for custom match, quick match checks it during matchmaking bucket stage
 				if (LobbyType == ELobbyType.CustomGame)
 				{
-					UserSession? lobbyOwnerSession = WebSocketManager.GetDataFromUser(Owner);
+					SharedUserData? lobbyOwnerSharedData = WebSocketManager.GetSharedDataForUser(Owner); // owner must be a game client
 
-					if (lobbyOwnerSession != null)
+					if (lobbyOwnerSharedData != null)
                     {
                         // dont allow join if blocked
-                        if (lobbyOwnerSession.GetSocialContainer().Blocked.Contains(playerSession.m_UserID))
+                        if (lobbyOwnerSharedData.GetSocialContainer().Blocked.Contains(playerSession.m_UserID))
                         {
                             return false;
                         }
@@ -527,7 +529,7 @@ namespace GenOnlineService
                         if (LobbyJoinability == ELobbyJoinability.FriendsOnly)
                         {
                             // If it's friends only, return false if they aren't friends
-                            if (!lobbyOwnerSession.GetSocialContainer().Friends.Contains(playerSession.m_UserID))
+                            if (!lobbyOwnerSharedData.GetSocialContainer().Friends.Contains(playerSession.m_UserID))
                             {
                             return false;
                             }
@@ -745,7 +747,7 @@ namespace GenOnlineService
 
 		public async Task DirtyRetransmitToSingleMember(Int64 targetUserID)
 		{
-			var session = WebSocketManager.GetDataFromUser(targetUserID);
+			var session = WebSocketManager.GetSessionFromUser(targetUserID, EUserSessionType.GameClient); // lobby member must be a game client
 			if (session != null)
 			{
 				Console.WriteLine("[DIRTY LOBBY] Sending WS lobby update for lobby {0}", LobbyID);

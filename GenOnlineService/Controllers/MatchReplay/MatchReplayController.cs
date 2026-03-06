@@ -92,9 +92,10 @@ namespace GenOnlineService.Controllers
 
 			// must be in a lobby
 			Int64 user_id = TokenHelper.GetUserID(this);
-			if (user_id != -1)
+			EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay)) // technically a duplicate check, since role above should also validate this, but just to be safe and avoid any weird edge cases where somehow we get here without a valid user session, etc
 			{
-				UserSession? sourceData = WebSocketManager.GetDataFromUser(user_id);
+				UserSession? sourceData = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 				if (sourceData != null)
 				{
 					// TODO_QUICKMATCH: We need a way of checking if player is really in a match or not, so they cant just upload all the time, and also dont let them keep uploading replays if they already did, etc

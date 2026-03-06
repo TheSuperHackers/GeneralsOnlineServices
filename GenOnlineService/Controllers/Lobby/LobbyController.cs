@@ -214,7 +214,8 @@ namespace GenOnlineService.Controllers
 					// need a lobby ID
 					int leavingPersonSlot = -1;
 					Int64 user_id = TokenHelper.GetUserID(this);
-					if (user_id != -1)
+					EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 					{
 						Lobby? lobby = _lobbyManager.GetLobby(lobbyID);
 						if (lobby != null)
@@ -238,7 +239,7 @@ namespace GenOnlineService.Controllers
 						TURNCredentialManager.DeleteCredentialsForUser(user_id);
 
 						// clear our lobby ID
-						UserSession? sourceData = WebSocketManager.GetDataFromUser(user_id);
+						UserSession? sourceData = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 
 						if (sourceData != null)
 						{
@@ -289,32 +290,36 @@ namespace GenOnlineService.Controllers
 						)
 					{
 						Int64 user_id = TokenHelper.GetUserID(this);
-						UserSession? sourceData = WebSocketManager.GetDataFromUser(user_id);
-						if (sourceData != null)
+						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+						if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 						{
-							int buildings_built = data["buildings_built"].GetInt32();
-							int buildings_killed = data["buildings_killed"].GetInt32();
-							int buildings_lost = data["buildings_lost"].GetInt32();
-							int units_built = data["units_built"].GetInt32();
-							int units_killed = data["units_killed"].GetInt32();
-							int units_lost = data["units_lost"].GetInt32();
-							int total_money = data["total_money"].GetInt32();
-							bool won = data["won"].GetBoolean();
-							UInt64 match_id = data["match_id"].GetUInt64();
-
-							// were they really in the match they claim to be in?
-							if (!sourceData.WasPlayerInMatch(match_id, out int slotIndexInLobby, out int army))
+							UserSession? sourceData = WebSocketManager.GetSessionFromUser(user_id, sessionType);
+							if (sourceData != null)
 							{
-								Response.StatusCode = (int)HttpStatusCode.Unauthorized;
-								return null;
+								int buildings_built = data["buildings_built"].GetInt32();
+								int buildings_killed = data["buildings_killed"].GetInt32();
+								int buildings_lost = data["buildings_lost"].GetInt32();
+								int units_built = data["units_built"].GetInt32();
+								int units_killed = data["units_killed"].GetInt32();
+								int units_lost = data["units_lost"].GetInt32();
+								int total_money = data["total_money"].GetInt32();
+								bool won = data["won"].GetBoolean();
+								UInt64 match_id = data["match_id"].GetUInt64();
+
+								// were they really in the match they claim to be in?
+								if (!sourceData.WasPlayerInMatch(match_id, out int slotIndexInLobby, out int army))
+								{
+									Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+									return null;
+								}
+
+								// register with daily stats
+								DailyStatsManager.RegisterOutcome(army, won);
+
+								// store in DB
+								await Database.Functions.Lobby.CommitPlayerOutcome(GlobalDatabaseInstance.g_Database, slotIndexInLobby, match_id,
+										buildings_built, buildings_killed, buildings_lost, units_built, units_killed, units_lost, total_money, won);
 							}
-
-							// register with daily stats
-							DailyStatsManager.RegisterOutcome(army, won);
-
-                            // store in DB
-                            await Database.Functions.Lobby.CommitPlayerOutcome(GlobalDatabaseInstance.g_Database, slotIndexInLobby, match_id,
-									buildings_built, buildings_killed, buildings_lost, units_built, units_killed, units_lost, total_money, won);
 						}
 					}
 				}
@@ -519,7 +524,7 @@ namespace GenOnlineService.Controllers
 										TURNCredentialManager.DeleteCredentialsForUser(KickedUserID);
 
 										// clear our lobby ID
-										UserSession? sourceData = WebSocketManager.GetDataFromUser(KickedUserID);
+										UserSession? sourceData = WebSocketManager.GetSessionFromUser(KickedUserID, EUserSessionType.GameClient); // user being kicked must be a game client
 
 										if (sourceData != null)
 										{
@@ -677,7 +682,8 @@ namespace GenOnlineService.Controllers
 						if (lobby != null)
 						{
 							Int64 user_id = TokenHelper.GetUserID(this);
-							if (user_id != -1)
+							EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+							if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 							{
 								UInt16 userPreferredPort = data["preferred_port"].GetUInt16();
 								bool bHasMap = data["has_map"].GetBoolean();
@@ -711,7 +717,7 @@ namespace GenOnlineService.Controllers
 									}
 								}
 
-								UserSession? playerSession = WebSocketManager.GetDataFromUser(user_id);
+								UserSession? playerSession = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 
 								if (playerSession != null)
 								{

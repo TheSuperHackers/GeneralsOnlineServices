@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Org.BouncyCastle.Security;
 using System;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Claims;
@@ -62,7 +63,7 @@ namespace GenOnlineService.Controllers
 	{
 		public string? name { get; set; }
 		public string? status { get; set; }
-		public string? client_id { get; set; }
+		public KnownClients.EKnownClients? client_id { get; set; }
 		public string? duration { get; set; }
 	}
 
@@ -119,16 +120,25 @@ namespace GenOnlineService.Controllers
 
 			// TODO_QUICKMATCH: We chekc maps are big enough, but the reverse needs checked too - dont let 8 playrs join a 6-8 ffa if only map is defcon6 for example
 
-			var allData = WebSocketManager.GetUserDataCache();
-			foreach (var sessionData in allData)
+			// TODO_EFCORE: People can be isgned in multiple times, should we show all of them in the count? or what
+			ConcurrentDictionary<EUserSessionType, ConcurrentDictionary<Int64, UserSession>> allData = WebSocketManager.GetUserDataCache();
+			foreach (var sessionDataPerClientType in allData)
 			{
-				GET_ActiveUsers_UserEntry userEntry = new();
-				userEntry.name = sessionData.Value.m_strDisplayName;
-				userEntry.status = UserPresence.DetermineUserStatus(sessionData.Value);
-				userEntry.client_id = sessionData.Value.m_client_id;
-				userEntry.duration = TimeSpanToHumanReadableString(sessionData.Value.GetDuration());
+				foreach (var sessionData in sessionDataPerClientType.Value)
+				{
+					SharedUserData? userSharedData = WebSocketManager.GetSharedDataForUser(sessionData.Value.m_UserID);
 
-				result.active_users.Add(userEntry);
+					if (userSharedData != null)
+					{
+						GET_ActiveUsers_UserEntry userEntry = new();
+						userEntry.name = userSharedData.m_strDisplayName;
+						userEntry.status = UserPresence.DetermineUserStatus(sessionData.Value);
+						userEntry.client_id = sessionData.Value.m_client_id;
+						userEntry.duration = TimeSpanToHumanReadableString(sessionData.Value.GetDuration());
+
+						result.active_users.Add(userEntry);
+					}
+				}
 			}
 
 

@@ -217,9 +217,10 @@ namespace GenOnlineService.Controllers
 
 			// must be in a lobby
 			Int64 user_id = TokenHelper.GetUserID(this);
-			if (user_id != -1)
+			EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 			{
-				UserSession? sourceData = WebSocketManager.GetDataFromUser(user_id);
+				UserSession? sourceData = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 				if (sourceData != null)
 				{
 					// lobby cant have AI and must have at least 2 human players at some point

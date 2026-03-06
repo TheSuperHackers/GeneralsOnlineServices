@@ -155,9 +155,10 @@ namespace GenOnlineService.Controllers
 					
 					
 					Int64 user_id = TokenHelper.GetUserID(this);
-					if (user_id != -1)
+					EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.ServerListReadOnly))
 					{
-						UserSession? sourceData = WebSocketManager.GetDataFromUser(user_id);
+						UserSession? sourceData = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 
 						if (sourceData != null)
 						{
@@ -197,7 +198,7 @@ namespace GenOnlineService.Controllers
 						foreach (Lobby lobby in lstLobbies)
 						{
 							// SOCIAL: If the lobby owner has source user blocked, remove the lobby
-							UserSession? lobbyOwner = WebSocketManager.GetDataFromUser(lobby.Owner);
+							SharedUserData? lobbyOwner = WebSocketManager.GetSharedDataForUser(lobby.Owner);
 
 							if (lobbyOwner != null)
 							{
@@ -357,15 +358,16 @@ namespace GenOnlineService.Controllers
 
 						// get requesting user data from session token
 						Int64 user_id = TokenHelper.GetUserID(this);
+						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
 
 						// check nullables also
-						if (user_id != -1 && strName != null && strMapName != null && strMapPath != null && strPassword != null)
+						if (user_id != -1 && strName != null && strMapName != null && strMapPath != null && strPassword != null && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 						{
 							// TODO: Handle failure here
 							// TODO_ASP: Remove ip address from db, not needed
 							string strIPAddr = "";
 
-							UserSession playerSession = WebSocketManager.GetDataFromUser(user_id);
+							UserSession playerSession = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 
 							if (playerSession != null)
 							{

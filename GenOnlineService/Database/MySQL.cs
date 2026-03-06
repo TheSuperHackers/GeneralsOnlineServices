@@ -453,11 +453,11 @@ namespace Database
                     foreach (var eloPair in dictEloData)
                     {
                         // store on player if online
-                        UserSession? playerSess = GenOnlineService.WebSocketManager.GetDataFromUser(eloPair.Key);
-                        if (playerSess != null)
+                        SharedUserData? sharedUserData = GenOnlineService.WebSocketManager.GetSharedDataForUser(eloPair.Key);
+                        if (sharedUserData != null)
                         {
-                            playerSess.GameStats.EloRating = eloPair.Value.Rating;
-                            playerSess.GameStats.EloMatches = eloPair.Value.NumMatches;
+                            sharedUserData.GameStats.EloRating = eloPair.Value.Rating;
+                            sharedUserData.GameStats.EloMatches = eloPair.Value.NumMatches;
                         }
                         await Database.Functions.Auth.SaveELOData(GlobalDatabaseInstance.g_Database, eloPair.Key, eloPair.Value);
                     }
@@ -1298,9 +1298,11 @@ namespace Database
 			// TODO: How do we stop dev clients connecting to PROD?
 			// TODO: Check more here, like IP, client, etc
 			
-			public async static Task SetUsedLoggedIn(MySQLInstance m_Inst, Int64 userID, string clientIDStr)
+			public async static Task SetUsedLoggedIn(MySQLInstance m_Inst, Int64 userID, KnownClients.EKnownClients clientID, EUserSessionType sessionType)
 			{
-				UInt16 clientID = clientIDStr == "gen_online_60hz" ? (UInt16)1 : (UInt16)0;
+				// TODO_EFCORE: website uses this index as 1 (60hz) to 0 (30hz), update it to use new enum + support new clients, also need to update DB to match
+				// TODO_EFCORE: Move away from db for this and just have website login call endpoint on service
+				//UInt16 clientID = clientIDStr == "gen_online_60hz" ? (UInt16)1 : (UInt16)0;
 
 				Console.ForegroundColor = ConsoleColor.Cyan;
 				Console.WriteLine("StartSession deleing other sessions for user {0}", userID);
@@ -1308,7 +1310,7 @@ namespace Database
 
 				// kill any WS they had too, StartSession comes before WS connects
 				// disconnect any other sessions with this ID
-				UserSession? sess = GenOnlineService.WebSocketManager.GetDataFromUser(userID);
+				UserSession? sess = GenOnlineService.WebSocketManager.GetSessionFromUser(userID, sessionType);
 				if (sess != null)
 				{
 					Console.ForegroundColor = ConsoleColor.Cyan;
@@ -1316,7 +1318,7 @@ namespace Database
 					Console.ForegroundColor = ConsoleColor.Gray;
 
 					UserWebSocketInstance? oldWS = GenOnlineService.WebSocketManager.GetWebSocketForSession(sess);
-					await GenOnlineService.WebSocketManager.DeleteSession(userID, oldWS, false);
+					await GenOnlineService.WebSocketManager.DeleteSession(userID, sessionType, oldWS, false);
 				}
 			}
 
@@ -1564,12 +1566,12 @@ namespace Database
 				DevAccount = 3
 			}
 
-			public enum ESessionType
-			{
-				Unknown = -1,
-				Website = 0,
-				Game = 1
-			}
+// 			public enum ESessionType
+// 			{
+// 				Unknown = -1,
+// 				Website = 0,
+// 				Game = 1
+// 			}
 
 			internal static async Task CreateUserIfNotExists_DevAccount(MySQLInstance m_Inst, Int64 user_id, string display_name)
 			{

@@ -223,7 +223,7 @@ static class MatchmakingManager
 
 	private static async Task SendMatchmakingMessage(UserSession cache, string message)
 	{
-		UserSession? sess = GenOnlineService.WebSocketManager.GetDataFromUser(cache.m_UserID);
+		UserSession? sess = GenOnlineService.WebSocketManager.GetSessionFromUser(cache.m_UserID, cache.GetSessionType());
 		if (sess != null)
 		{
 			WebSocketMessage_MatchmakingMessage msg = new WebSocketMessage_MatchmakingMessage();
@@ -549,6 +549,7 @@ static class MatchmakingManager
 			return m_lstMembers.Count;
 		}
 
+		// TODO_EFCORE: Shared User data, and session<->websocket could be weakrefs
 		public bool IsJoiningUserBlockedByOrHasBlockedAnyBucketMember(UserSession? joiningUserSession, Int64 joining_user)
 		{
 			// NOTE: We check blocking in both directions, joiner blocked them, or joiner is blocked by a player
@@ -557,9 +558,14 @@ static class MatchmakingManager
 				UserSession? memberSession = member.GetAssociatedSession();
 				if (memberSession != null)
 				{
-					if (memberSession.GetSocialContainer().Blocked.Contains(joining_user) || joiningUserSession.GetSocialContainer().Blocked.Contains(memberSession.m_UserID))
+					SharedUserData? memberUserData = GenOnlineService.WebSocketManager.GetSharedDataForUser(memberSession.m_UserID);
+
+					if (memberUserData != null)
 					{
-						return true;
+						if (memberUserData.GetSocialContainer().Blocked.Contains(joining_user) || memberUserData.GetSocialContainer().Blocked.Contains(memberSession.m_UserID))
+						{
+							return true;
+						}
 					}
 				}
 			}
@@ -610,7 +616,12 @@ static class MatchmakingManager
 				UserSession? memberSession = member.GetAssociatedSession();
                 if (memberSession != null)
                 {
-                    avgElo += memberSession.GameStats.EloRating;
+					SharedUserData? memberUserData = GenOnlineService.WebSocketManager.GetSharedDataForUser(memberSession.m_UserID);
+
+					if (memberUserData != null)
+					{
+						avgElo += memberUserData.GameStats.EloRating;
+					}
                 }
             }
             avgElo /= numMembers;
@@ -759,26 +770,31 @@ static class MatchmakingManager
 						// should have a user by now
 						if (dummyHostUser != null)
 						{
-							// make a lobby
-							DetermineMap(out string strMapName, out string strMapPath);
+							SharedUserData? dummyHostUserData = GenOnlineService.WebSocketManager.GetSharedDataForUser(dummyHostUser.m_UserID);
 
-							using var scope = ServiceLocator.Services.CreateScope();
-							var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-							m_LobbyID = await lobbyManager.CreateLobby(db, dummyHostUser, dummyHostUser.m_strDisplayName, "Quickmatch Lobby", strMapName, strMapPath + ".map",
-									true, playlist.DesiredPlayers, "", 12345, false, true, 10000, false, String.Empty, -5, false, Constants.g_DefaultCameraMaxHeight, 123, 456, ELobbyType.QuickMatch);
-
-							// tell both to join our lobby
-							WebSocketMessage_MatchmakerJoinLobby joinAction = new WebSocketMessage_MatchmakerJoinLobby();
-							joinAction.msg_id = (int)EWebSocketMessageID.MATCHMAKING_ACTION_JOIN_PREARRANGED_LOBBY;
-							joinAction.lobby_id = m_LobbyID;
-							byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(joinAction));
-
-							foreach (MatchmakingBucketMember member in m_lstMembers)
+							if (dummyHostUserData != null)
 							{
-								UserSession? memberSession = member.GetAssociatedSession();
-								if (memberSession != null)
+								// make a lobby
+								DetermineMap(out string strMapName, out string strMapPath);
+
+								using var scope = ServiceLocator.Services.CreateScope();
+								var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+								m_LobbyID = await lobbyManager.CreateLobby(db, dummyHostUser, dummyHostUserData.m_strDisplayName, "Quickmatch Lobby", strMapName, strMapPath + ".map",
+										true, playlist.DesiredPlayers, "", 12345, false, true, 10000, false, String.Empty, -5, false, Constants.g_DefaultCameraMaxHeight, 123, 456, ELobbyType.QuickMatch);
+
+								// tell both to join our lobby
+								WebSocketMessage_MatchmakerJoinLobby joinAction = new WebSocketMessage_MatchmakerJoinLobby();
+								joinAction.msg_id = (int)EWebSocketMessageID.MATCHMAKING_ACTION_JOIN_PREARRANGED_LOBBY;
+								joinAction.lobby_id = m_LobbyID;
+								byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(joinAction));
+
+								foreach (MatchmakingBucketMember member in m_lstMembers)
 								{
-									memberSession.QueueWebsocketSend(bytesJSON);
+									UserSession? memberSession = member.GetAssociatedSession();
+									if (memberSession != null)
+									{
+										memberSession.QueueWebsocketSend(bytesJSON);
+									}
 								}
 							}
 						}
@@ -1054,77 +1070,86 @@ static class MatchmakingManager
 			}
 			else
 			{
-				if (g_Playlists.TryGetValue(thisSession.MatchmakingPlaylistID, out Playlist? playlist))
+				SharedUserData? thisSessionUserData = GenOnlineService.WebSocketManager.GetSharedDataForUser(thisSession.m_UserID);
+
+				if (thisSessionUserData == null)
 				{
-				
-					// TODO_MATCHAMAKING: Better way of tracking this, we need to know who is already in a bucket
-					// Was the user in a bucket? if so theres nothing to do in terms of bucket management
-					bool bUseInBucket = false;
-					MatchmakingBucket? mmBucketUserIsIn = null;
-					foreach (MatchmakingBucket mmBucket in m_dictMatchmakingBuckets[thisSession.MatchmakingPlaylistID])
-					{
-						if (mmBucket.HasPlayer(thisSession))
-						{
-							bUseInBucket = true;
-							mmBucketUserIsIn = mmBucket;
-							break;
-						}
-					}
-
-					if (!bUseInBucket)
-					{
-						// is there a suitable bucket for us
-						// TODO_MATCHMAKING: Optimize lookup
-						if (m_dictMatchmakingBuckets.ContainsKey(thisSession.MatchmakingPlaylistID))
-						{
-							MatchmakingBucket? bucketInUse = null;
-							foreach (MatchmakingBucket mmBucket in m_dictMatchmakingBuckets[thisSession.MatchmakingPlaylistID])
-							{
-								// must be within initial elo threshold for a join, otherwise we'll make a bucket and try to merge buckets using the elo iteration expansion algorithm
-								if (mmBucket.IsAvgEloWithinThreshold(thisSession.GameStats.EloRating, EloConfig.EloExpansionValue))
-								{
-                                    // TODO_MATCHMAKING: Squads
-                                    if (mmBucket.HasSpaceForUsers(1, thisSession.ExeCRC, thisSession.IniCRC))
-                                    {
-                                        // do the maps overlap? if so we can join
-                                        if (mmBucket.DoMapSelectionsIntersect(thisSession.MatchmakingMapIndicies))
-                                        {
-                                            bool bJoined = await mmBucket.Join(thisSession);
-
-											if (bJoined)
-											{
-                                                bucketInUse = mmBucket;
-                                            }
-											else
-											{
-												bucketInUse = null;
-											}
-                                        }
-                                    }
-                                }
-							}
-
-							// didnt find a bucket? make one
-							if (bucketInUse == null)
-							{
-								MatchmakingBucket newBucket = new MatchmakingBucket(playlist.PlaylistID, thisSession, playlist.MinPlayers, playlist.DesiredPlayers, thisSession.MatchmakingMapIndicies, thisSession.ExeCRC,	thisSession.IniCRC);
-								m_dictMatchmakingBuckets[thisSession.MatchmakingPlaylistID].Add(newBucket);
-								bucketInUse = newBucket;
-							}
-
-							// send status to use
-							await SendMatchmakingMessage(thisSession, String.Format("You are now matchmaking in playlist \"{0}\". There are currently {1} player(s) searching for a match in this playlist", playlist.Name, GetTotalQueuedPlayersInPlaylist(playlist.PlaylistID)));
-							await SendMatchmakingMessage(thisSession, String.Format("Status: {0}/{1} players. ({2} required to start)", bucketInUse.CurrentMemberCount(), bucketInUse.DesiredPlayers, bucketInUse.MinPlayers));
-
-							// now remove us from lstSessions, this list is essentially people who need sorted into a bucket
-							lstDestroy.Add(wrSession);
-						}
-					}
+					lstDestroy.Add(wrSession);
 				}
 				else
 				{
-					// invalid playlist somehow
-					lstDestroy.Add(wrSession);
+					if (g_Playlists.TryGetValue(thisSession.MatchmakingPlaylistID, out Playlist? playlist))
+					{
+
+						// TODO_MATCHAMAKING: Better way of tracking this, we need to know who is already in a bucket
+						// Was the user in a bucket? if so theres nothing to do in terms of bucket management
+						bool bUseInBucket = false;
+						MatchmakingBucket? mmBucketUserIsIn = null;
+						foreach (MatchmakingBucket mmBucket in m_dictMatchmakingBuckets[thisSession.MatchmakingPlaylistID])
+						{
+							if (mmBucket.HasPlayer(thisSession))
+							{
+								bUseInBucket = true;
+								mmBucketUserIsIn = mmBucket;
+								break;
+							}
+						}
+
+						if (!bUseInBucket)
+						{
+							// is there a suitable bucket for us
+							// TODO_MATCHMAKING: Optimize lookup
+							if (m_dictMatchmakingBuckets.ContainsKey(thisSession.MatchmakingPlaylistID))
+							{
+								MatchmakingBucket? bucketInUse = null;
+								foreach (MatchmakingBucket mmBucket in m_dictMatchmakingBuckets[thisSession.MatchmakingPlaylistID])
+								{
+									// must be within initial elo threshold for a join, otherwise we'll make a bucket and try to merge buckets using the elo iteration expansion algorithm
+									if (mmBucket.IsAvgEloWithinThreshold(thisSessionUserData.GameStats.EloRating, EloConfig.EloExpansionValue))
+									{
+										// TODO_MATCHMAKING: Squads
+										if (mmBucket.HasSpaceForUsers(1, thisSession.ExeCRC, thisSession.IniCRC))
+										{
+											// do the maps overlap? if so we can join
+											if (mmBucket.DoMapSelectionsIntersect(thisSession.MatchmakingMapIndicies))
+											{
+												bool bJoined = await mmBucket.Join(thisSession);
+
+												if (bJoined)
+												{
+													bucketInUse = mmBucket;
+												}
+												else
+												{
+													bucketInUse = null;
+												}
+											}
+										}
+									}
+								}
+
+								// didnt find a bucket? make one
+								if (bucketInUse == null)
+								{
+									MatchmakingBucket newBucket = new MatchmakingBucket(playlist.PlaylistID, thisSession, playlist.MinPlayers, playlist.DesiredPlayers, thisSession.MatchmakingMapIndicies, thisSession.ExeCRC, thisSession.IniCRC);
+									m_dictMatchmakingBuckets[thisSession.MatchmakingPlaylistID].Add(newBucket);
+									bucketInUse = newBucket;
+								}
+
+								// send status to use
+								await SendMatchmakingMessage(thisSession, String.Format("You are now matchmaking in playlist \"{0}\". There are currently {1} player(s) searching for a match in this playlist", playlist.Name, GetTotalQueuedPlayersInPlaylist(playlist.PlaylistID)));
+								await SendMatchmakingMessage(thisSession, String.Format("Status: {0}/{1} players. ({2} required to start)", bucketInUse.CurrentMemberCount(), bucketInUse.DesiredPlayers, bucketInUse.MinPlayers));
+
+								// now remove us from lstSessions, this list is essentially people who need sorted into a bucket
+								lstDestroy.Add(wrSession);
+							}
+						}
+					}
+					else
+					{
+						// invalid playlist somehow
+						lstDestroy.Add(wrSession);
+					}
 				}
 			}
 		}

@@ -20,6 +20,7 @@ using Amazon.S3.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System;
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
@@ -88,16 +89,23 @@ namespace GenOnlineService.Controllers
 
 			// TODO_QUICKMATCH: We chekc maps are big enough, but the reverse needs checked too - dont let 8 playrs join a 6-8 ffa if only map is defcon6 for example
 
-			var allData = WebSocketManager.GetUserDataCache();
-			foreach (var sessionData in allData)
+			ConcurrentDictionary<EUserSessionType, ConcurrentDictionary<Int64, UserSession>> allData = WebSocketManager.GetUserDataCache();
+			foreach (var sessionDataPerClientType in allData)
 			{
-				GET_ActiveUsers_UserEntry userEntry = new();
-				userEntry.name = sessionData.Value.m_strDisplayName;
-				userEntry.status = UserPresence.DetermineUserStatus(sessionData.Value);
-				userEntry.client_id = sessionData.Value.m_client_id;
-				userEntry.duration = TimeSpanToHumanReadableString(sessionData.Value.GetDuration());
+				foreach (var sessionData in sessionDataPerClientType.Value)
+				{
+					SharedUserData? userSharedData = WebSocketManager.GetSharedDataForUser(sessionData.Value.m_UserID);
+					if (userSharedData != null)
+					{
+						GET_ActiveUsers_UserEntry userEntry = new();
+						userEntry.name = userSharedData.m_strDisplayName;
+						userEntry.status = UserPresence.DetermineUserStatus(sessionData.Value);
+						userEntry.client_id = sessionData.Value.m_client_id;
+						userEntry.duration = TimeSpanToHumanReadableString(sessionData.Value.GetDuration());
 
-				result.active_users.Add(userEntry);
+						result.active_users.Add(userEntry);
+					}
+				}
 			}
 
 
@@ -124,17 +132,18 @@ namespace GenOnlineService.Controllers
 
 			Int64 user_id = TokenHelper.GetUserID(this);
 
-			if (user_id != -1)
+			EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Authenticate))
 			{
 				// TODO_JWT: Add token used to a 'ban list'
 				//string token = "";
 
 				// end session
-				UserSession? session = WebSocketManager.GetDataFromUser(user_id);
+				UserSession? session = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 				if (session != null)
 				{
 					UserWebSocketInstance ws = await session.CloseWebsocket(WebSocketCloseStatus.NormalClosure, "User logged out");
-					await WebSocketManager.DeleteSession(user_id, ws, true);
+					await WebSocketManager.DeleteSession(user_id, sessionType, ws, true);
 				}
 			}
 

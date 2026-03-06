@@ -125,12 +125,15 @@ namespace GenOnlineService.Controllers
 								UInt32 highestIDFound = 0;
 								// which account should we use?
 								var sessions = WebSocketManager.GetUserDataCache();
-								foreach (KeyValuePair<Int64, UserSession> sessionData in sessions)
+								foreach (var sessionDataByClient in sessions)
 								{
-									UserSession sessIter = sessionData.Value;
-									if (sessIter.m_UserID > highestIDFound)
+									foreach (var sessionData in sessionDataByClient.Value)
 									{
-										highestIDFound = (UInt32)sessIter.m_UserID;
+										UserSession sessIter = sessionData.Value;
+										if (sessIter.m_UserID > highestIDFound)
+										{
+											highestIDFound = (UInt32)sessIter.m_UserID;
+										}
 									}
 								}
 
@@ -156,9 +159,9 @@ namespace GenOnlineService.Controllers
 									Int64 user_id = await Database.Functions.Auth.GetUserIDFromPendingLogin(GlobalDatabaseInstance.g_Database, gameCode);
 										//string sess_id = await Database.Functions.Auth.StartSession(GlobalDatabaseInstance.g_Database, user_id, clientID);
 										//string autologin_token = await Database.Functions.Auth.CreateAutoLogin(GlobalDatabaseInstance.g_Database, user_id);
-										string strDisplayName = await Database.Functions.Auth.GetDisplayName(GlobalDatabaseInstance.g_Database, user_id);
+										string strDisplayName = await Database.Users.GetDisplayName(_db, user_id);
 
-								bool bIsAdmin = await Database.Functions.Auth.IsUserAdmin(GlobalDatabaseInstance.g_Database, user_id);
+								bool bIsAdmin = await Database.Users.IsUserAdmin(_db, user_id);
 #endif
 
 							if (state == EPendingLoginState.Waiting)
@@ -181,10 +184,14 @@ namespace GenOnlineService.Controllers
 										return result;
 									}
 
-									// full login
-									if (clientID == "gen_online_60hz" || clientID == "gen_online_30hz" || clientID == "genhub")
+									// full login (known clients)
+									if (Enum.TryParse(typeof(KnownClients.EKnownClients), clientID, ignoreCase: true, out object knownClientIDObj))
 									{
-										if (clientID == "gen_online_60hz" || clientID == "gen_online_30hz")
+										KnownClients.EKnownClients knownClientID = (KnownClients.EKnownClients)knownClientIDObj;
+										EUserSessionType sessionType = KnownClients.KnownClientSessionTypes[knownClientID];
+
+										// Game clients should register the user device
+										if (sessionType == EUserSessionType.GameClient)
 										{
 											string hwid_0 = data.ContainsKey("reserved_0") ? data["reserved_0"].ToString() : "NONE";
 											string hwid_1 = data.ContainsKey("reserved_1") ? data["reserved_1"].ToString() : "NONE";
@@ -195,8 +202,8 @@ namespace GenOnlineService.Controllers
 										string exe_crc = data.ContainsKey("exe_crc") ? data["exe_crc"].ToString() : "NONE";
 										Helpers.RegisterInitialPlayerExeCRC(user_id, exe_crc);
 
-										var sessiontoken = Program.g_tokenGenerator.GenerateToken(strDisplayName, user_id, ipAddr, Program.JwtTokenGenerator.ETokenType.Session, clientID, bIsAdmin);
-										var refreshtoken = Program.g_tokenGenerator.GenerateToken(strDisplayName, user_id, ipAddr, Program.JwtTokenGenerator.ETokenType.Refresh, clientID, false);
+										var sessiontoken = Program.g_tokenGenerator.GenerateToken(strDisplayName, user_id, ipAddr, Program.JwtTokenGenerator.ETokenType.Session, knownClientID, sessionType, bIsAdmin);
+										var refreshtoken = Program.g_tokenGenerator.GenerateToken(strDisplayName, user_id, ipAddr, Program.JwtTokenGenerator.ETokenType.Refresh, knownClientID, sessionType, false);
 
 										result.result = EPendingLoginState.LoginSuccess;
 										result.session_token = sessiontoken;
@@ -206,7 +213,7 @@ namespace GenOnlineService.Controllers
 										result.ws_uri = Program.GetWebSocketAddress(bSecureWS);
 
 										// clear cached data, its a refresh websocket connection
-										WebSocketManager.ClearDataFromUser(user_id);
+										WebSocketManager.ClearDataFromUser(user_id, sessionType);
 									}
 									else // limited login (auth partners)
 									{

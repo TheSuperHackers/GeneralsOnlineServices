@@ -246,6 +246,37 @@ namespace GenOnlineService
 		}
 	}
 
+	public static class SessionHelpers
+	{
+		public enum ESessionAccessType
+		{
+			Authenticate, // log in and out
+			Social, // friends lists
+			ServerListReadOnly, // can read lobby list and players etc, but cannot join
+			StatsReadOnly, // can read stats for any user, but not write anything
+			Gameplay, // Create lobbies, Anticheat, Middleware login, Matchmaking, match screenshots, replays, join lobby, etc
+		};
+
+		public static bool SessionTypeHasAccessTo(EUserSessionType sessType, ESessionAccessType accessType)
+		{
+			if (sessType == EUserSessionType.GameClient) // client can do anything
+			{
+				return true;
+			}
+			else if (sessType == EUserSessionType.ChatClient)
+			{
+				return false;
+			}
+
+			else if (sessType == EUserSessionType.GameLauncher)
+			{
+				return false;
+			}
+
+			return false;
+		}
+	}
+
 	public static class TokenHelper
 	{
 		public static Int64 GetUserID(ControllerBase controller)
@@ -256,6 +287,40 @@ namespace GenOnlineService
 			}
 
 			return Convert.ToInt64(controller.User.Claims.First().Value);
+		}
+
+		public static KnownClients.EKnownClients GetClientID(ControllerBase controller)
+		{
+			var first = controller.User.FindFirst("client_id");
+
+			if (int.TryParse(first.Value, out int clientIDInt32))
+			{
+				// Validate if the int corresponds to a defined enum value
+				if (System.Enum.IsDefined(typeof(KnownClients.EKnownClients), clientIDInt32))
+				{
+					KnownClients.EKnownClients knownClientID = (KnownClients.EKnownClients)clientIDInt32;
+					return knownClientID;
+				}
+			}
+
+			return KnownClients.EKnownClients.unknown;
+		}
+
+		public static EUserSessionType GetSessionType(ControllerBase controller)
+		{
+			var first = controller.User.FindFirst("session_type");
+
+			if (int.TryParse(first.Value, out int sessionTypeInt32))
+			{
+				// Validate if the int corresponds to a defined enum value
+				if (System.Enum.IsDefined(typeof(EUserSessionType), sessionTypeInt32))
+				{
+					EUserSessionType sessionType = (EUserSessionType)sessionTypeInt32;
+					return sessionType;
+				}
+			}
+
+			return EUserSessionType.None;
 		}
 
 		public static string GetDisplayName(ControllerBase controller)
@@ -384,7 +449,7 @@ namespace GenOnlineService
 				Refresh
 			}
 
-			public string GenerateToken(string displayname, Int64 userID, string ipAddr, ETokenType tokenType, string client_id, bool bIsAdmin)
+			public string GenerateToken(string displayname, Int64 userID, string ipAddr, ETokenType tokenType, KnownClients.EKnownClients knownClientID, EUserSessionType sessionType, bool bIsAdmin)
 			{
 				var jwtSettings = _configuration.GetSection("JwtSettings");
 
@@ -409,9 +474,26 @@ namespace GenOnlineService
 					new Claim(JwtRegisteredClaimNames.Name, displayname),
 					new Claim(JwtRegisteredClaimNames.Address, ipAddr),
 					new Claim(JwtRegisteredClaimNames.Typ, ((int)tokenType).ToString()),
-					new Claim("client_id", client_id),
-					new Claim(ClaimTypes.Role, "Player")
+					new Claim("client_id", knownClientID.ToString()),
+					new Claim("session_type", ((int)sessionType).ToString())
 				};
+
+				if (sessionType == EUserSessionType.GameClient)
+				{
+					claims.Add(new Claim(ClaimTypes.Role, "GameClient"));
+				}
+				else if (sessionType == EUserSessionType.ChatClient)
+				{
+					claims.Add(new Claim(ClaimTypes.Role, "ChatClient"));
+				}
+				else if (sessionType == EUserSessionType.GameLauncher)
+				{
+					claims.Add(new Claim(ClaimTypes.Role, "GameLauncher"));
+				}
+				else
+				{
+					throw new Exception("Unhandled session type: " + sessionType);
+				}
 
 				if (bIsAdmin)
 				{

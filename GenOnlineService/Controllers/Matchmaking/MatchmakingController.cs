@@ -76,9 +76,10 @@ namespace GenOnlineService.Controllers
 						UInt32 ini_crc = data["ini_crc"].GetUInt32();
 
 						Int64 user_id = TokenHelper.GetUserID(this);
-						if (user_id != -1)
+						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+						if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 						{
-							UserSession? playerSession = WebSocketManager.GetDataFromUser(user_id); ;
+							UserSession? playerSession = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 
 							if (playerSession != null)
 							{
@@ -103,9 +104,10 @@ namespace GenOnlineService.Controllers
 			// TODO_QUICKMATCH: What if a user widens after already being matched? We should probably tell them no
 			// widen the search
 			Int64 user_id = TokenHelper.GetUserID(this);
-			if (user_id != -1)
+			EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 			{
-				UserSession? playerSession = WebSocketManager.GetDataFromUser(user_id); ;
+				UserSession? playerSession = WebSocketManager.GetSessionFromUser(user_id, sessionType); ;
 
 				if (playerSession != null)
 				{
@@ -119,9 +121,10 @@ namespace GenOnlineService.Controllers
 		public void Delete()
 		{
 			Int64 user_id = TokenHelper.GetUserID(this);
-			if (user_id != -1)
+			EUserSessionType sessionType = TokenHelper.GetSessionType(this);
+			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
 			{
-				UserSession? playerSession = WebSocketManager.GetDataFromUser(user_id); ;
+				UserSession? playerSession = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 
 				if (playerSession != null)
 				{
