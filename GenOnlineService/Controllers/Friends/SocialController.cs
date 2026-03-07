@@ -140,7 +140,7 @@ namespace GenOnlineService.Controllers
 
 		// Accept a request
 		[HttpPost("Friends/Requests/{target_user_id}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		public async Task AcceptPendingRequest(Int64 target_user_id)
 		{
 			// source user must be signed in (anywhere)
@@ -159,7 +159,7 @@ namespace GenOnlineService.Controllers
 
 		// Reject a request
 		[HttpDelete("Friends/Requests/{target_user_id}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		public async Task RejectPendingRequest(Int64 target_user_id)
 		{
 			// source user must be signed in
@@ -186,7 +186,7 @@ namespace GenOnlineService.Controllers
 
 		// Remove a friend
 		[HttpDelete("Friends/{target_user_id}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		public async Task RemoveFriend(Int64 target_user_id)
 		{
 			// source user must be signed in
@@ -227,7 +227,7 @@ namespace GenOnlineService.Controllers
 
         // Send a request
         [HttpPut("Friends/Requests/{target_user_id}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		public async Task AddFriend(Int64 target_user_id)
 		{
 			// source user must be signed in
@@ -324,7 +324,7 @@ namespace GenOnlineService.Controllers
 		}
 
 		[HttpGet("Friends")]
-		[Authorize(Roles = "Player,Monitor")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher,Monitor")]
 		public async Task<APIResult> Get_FriendsAndRequests()
 		{
 			// TODO_ASP: Set error codes properly in all places (and use variable, not magic numbers)
@@ -424,7 +424,7 @@ namespace GenOnlineService.Controllers
 		}
 
 		[HttpGet("Blocked")]
-		[Authorize(Roles = "Player,Monitor")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher,Monitor")]
 		public async Task<APIResult> Get_Blocked()
 		{
 			// TODO_ASP: Set error codes properly in all places (and use variable, not magic numbers)
@@ -489,7 +489,7 @@ namespace GenOnlineService.Controllers
 
 		// Block user
 		[HttpPut("Blocked/{target_user_id}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		public async Task Add_Block(Int64 target_user_id)
 		{
 			// source user must be signed in
@@ -556,7 +556,7 @@ namespace GenOnlineService.Controllers
 
 		// Unblock user
 		[HttpDelete("Blocked/{target_user_id}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		public async Task Remove_Block(Int64 target_user_id)
 		{
 			// We must:

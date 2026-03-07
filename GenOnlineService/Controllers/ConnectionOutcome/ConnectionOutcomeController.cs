@@ -42,7 +42,7 @@ namespace GenOnlineService.Controllers
 	// TODO_EFCORE: Move to a publish/subscribe model for rooms
 	// TODO_EFCORE: Must review all Roles=, we changed roles up
 	[ApiController]
-	[Authorize(Roles = "Player")]
+	[Authorize(Roles = "GameClient")]
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class ConnectionOutcomeController : ControllerBase
 	{

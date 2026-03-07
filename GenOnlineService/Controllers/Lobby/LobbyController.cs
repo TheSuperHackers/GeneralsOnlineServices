@@ -153,7 +153,7 @@ namespace GenOnlineService.Controllers
 		}
 
 		[HttpGet("{lobby_id}")]
-		[Authorize(Roles = "Player,Monitor")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher,Monitor")]
 		public async Task<APIResult> Get(string lobby_id)
 		{
 			RouteHandler_GET_Lobby_Result result = new RouteHandler_GET_Lobby_Result();
@@ -195,7 +195,7 @@ namespace GenOnlineService.Controllers
 		}
 
 		[HttpDelete("{lobbyID}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient")]
 		public async Task<APIResult> Delete(Int64 lobbyID)
 		{
 			RouteHandler_DELETE_Lobby_Result result = new RouteHandler_DELETE_Lobby_Result();
@@ -261,7 +261,7 @@ namespace GenOnlineService.Controllers
 		}
 
 		[HttpPost("Outcome")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient")]
 		public async Task<APIResult?> PostOutcome()
 		{
 			using (var reader = new StreamReader(HttpContext.Request.Body))
@@ -363,7 +363,7 @@ namespace GenOnlineService.Controllers
 
 
 		[HttpPost("{lobbyID}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient")]
 		public async Task<APIResult> Post(Int64 lobbyID)
 		{
 			RouteHandler_POST_Lobby_Result result = new RouteHandler_POST_Lobby_Result();
@@ -652,7 +652,7 @@ namespace GenOnlineService.Controllers
 		}
 
 		[HttpPut("{lobbyID}")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient")]
 		public async Task<APIResult> Put(Int64 lobbyID)
 		{
 			RouteHandler_PUT_Lobby_Result result = new RouteHandler_PUT_Lobby_Result();

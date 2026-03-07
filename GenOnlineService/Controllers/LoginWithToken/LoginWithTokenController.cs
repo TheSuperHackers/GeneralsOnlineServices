@@ -45,7 +45,7 @@ namespace GenOnlineService.Controllers.LoginWithToken
 	}
 
 	[ApiController]
-	[Authorize(Roles = "Player")]
+	[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class LoginWithToken : ControllerBase
 	{
@@ -93,7 +93,6 @@ namespace GenOnlineService.Controllers.LoginWithToken
 			{
 				var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonData, options);
 
-				// TODO_EFCORE: remove client_id from the client, token has it, and is more trustworthy
 				KnownClients.EKnownClients clientID = TokenHelper.GetClientID(this);
 				if (clientID == KnownClients.EKnownClients.unknown)
 				{

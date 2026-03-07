@@ -120,7 +120,7 @@ namespace GenOnlineService.Controllers
 
         // Bulk endpoint
         [HttpPost("Batch")]
-        [Authorize(Roles = "Player,Monitor")]
+        [Authorize(Roles = "GameClient,ChatClient,GameLauncher,Monitor")]
         public async Task<APIResult> PostBatched()
         {
             RouteHandler_GET_PlayerStatsBatch_Result result = new RouteHandler_GET_PlayerStatsBatch_Result();
@@ -159,7 +159,7 @@ namespace GenOnlineService.Controllers
         }
 
         [HttpPut]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient")]
 		public async Task<APIResult> Put()
 		{
 			RouteHandler_PUT_PlayerStats_Result result = new RouteHandler_PUT_PlayerStats_Result();

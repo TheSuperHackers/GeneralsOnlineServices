@@ -58,7 +58,7 @@ namespace GenOnlineService.Controllers
 
 		[HttpPut]
 		[RequestSizeLimit(2097152)] // 2MB
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient")]
 		public async Task<APIResult> Post()
 		{
 			RouteHandler_POST_Lobby_Result result = new RouteHandler_POST_Lobby_Result();

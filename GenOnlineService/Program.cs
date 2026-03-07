@@ -728,11 +728,17 @@ namespace GenOnlineService
 						return false;
 					}));
 
-				options.AddPolicy("PlayerOrMonitorOrApiKey", policy =>
+				options.AddPolicy("AnyClientOrMonitorOrApiKey", policy =>
 					policy.RequireAssertion(context =>
 					{
 						// Check roles
-						if (context.User.IsInRole("Player"))
+						if (context.User.IsInRole("GameClient"))
+							return true;
+
+						if (context.User.IsInRole("ChatClient"))
+							return true;
+
+						if (context.User.IsInRole("GameLauncher"))
 							return true;
 
 						if (context.User.IsInRole("Monitor"))

@@ -55,7 +55,7 @@ namespace GenOnlineService.Controllers
 		}
 
 		[Route("/ws")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		public async Task Get([FromHeader(Name = "is-reconnect")] bool bIsReconnect)
 		{
 			if (!HttpContext.WebSockets.IsWebSocketRequest)

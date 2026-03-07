@@ -130,7 +130,7 @@ namespace GenOnlineService.Controllers
 		// END LATENCY ESTIMATIONS
 
 		[HttpGet(Name = "GetLobbies")]
-		[Authorize(Policy = "PlayerOrMonitorOrApiKey")]
+		[Authorize(Policy = "AnyClientOrMonitorOrApiKey")]
 		public async Task<APIResult> Get()
 		{
 			RouteHandler_GET_Lobbies_Result result = new RouteHandler_GET_Lobbies_Result();
@@ -282,7 +282,7 @@ namespace GenOnlineService.Controllers
 		}
 
 		[HttpPut(Name = "PutLobbies")]
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient")]
 		public async Task<APIResult> Put()
 		{
 			RouteHandler_PUT_Lobbies_Result result = new RouteHandler_PUT_Lobbies_Result();

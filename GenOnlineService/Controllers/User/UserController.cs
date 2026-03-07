@@ -39,7 +39,7 @@ namespace GenOnlineService.Controllers
 	}
 
 	[ApiController]
-	[Authorize(Roles = "Player")]
+	[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class UsersController : ControllerBase
 	{
@@ -52,7 +52,7 @@ namespace GenOnlineService.Controllers
 			_db = db;
 		}
 
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		[HttpGet("Me")]
 		public async Task<APIResult> MyUser()
 		{
@@ -71,7 +71,7 @@ namespace GenOnlineService.Controllers
 			return result;
 		}
 
-		[Authorize(Roles = "Player")]
+		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 		[HttpGet("Active")]
 		public APIResult ActiveUsers()
 		{
@@ -114,7 +114,7 @@ namespace GenOnlineService.Controllers
 	}
 
 	[ApiController]
-	[Authorize(Roles = "Player")]
+	[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class UserController : ControllerBase
 	{
