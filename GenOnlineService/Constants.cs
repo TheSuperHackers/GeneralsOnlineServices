@@ -177,7 +177,8 @@ namespace GenOnlineService
 			[EKnownClients.gen_online_30hz] = EUserSessionType.GameClient,
 			[EKnownClients.gen_online_60hz] = EUserSessionType.GameClient,
 			[EKnownClients.genhub] = EUserSessionType.GameLauncher,
-			[EKnownClients.communityoutpost_chat] = EUserSessionType.ChatClient
+			[EKnownClients.communityoutpost_chat] = EUserSessionType.ChatClient,
+			[EKnownClients.superhackers_community_patch_client] = EUserSessionType.GameClient
 		};
 	}
 
