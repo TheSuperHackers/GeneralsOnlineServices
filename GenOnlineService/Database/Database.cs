@@ -23,10 +23,12 @@ using System.Text.Json;
 public class AppDbContext : DbContext
 {
 	public DbSet<User> Users => Set<User>();
+	public DbSet<UserDevice> UserDevices => Set<UserDevice>();
 	public DbSet<DailyStat> DailyStats => Set<DailyStat>();
 	public DbSet<LeaderboardDaily> LeaderboardDaily => Set<LeaderboardDaily>();
 	public DbSet<LeaderboardMonthly> LeaderboardMonthly => Set<LeaderboardMonthly>();
 	public DbSet<LeaderboardYearly> LeaderboardYearly => Set<LeaderboardYearly>();
+	public DbSet<ServiceStat> ServiceStats => Set<ServiceStat>();
 
 	public AppDbContext(DbContextOptions<AppDbContext> options)
 		: base(options)
@@ -39,9 +41,11 @@ public class AppDbContext : DbContext
 		base.OnModelCreating(modelBuilder);
 
 		modelBuilder.ApplyConfiguration(new UserConfiguration());
+		modelBuilder.ApplyConfiguration(new UserDevicesConfiguration());
 		modelBuilder.ApplyConfiguration(new DailyStatsConfiguration());
 		modelBuilder.ApplyConfiguration(new LeaderboardDailyConfiguration());
 		modelBuilder.ApplyConfiguration(new LeaderboardMonthlyConfiguration());
 		modelBuilder.ApplyConfiguration(new LeaderboardYearlyConfiguration());
+		modelBuilder.ApplyConfiguration(new ServiceStatsConfiguration());
 	}
 }

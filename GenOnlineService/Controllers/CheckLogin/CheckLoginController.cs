@@ -196,7 +196,7 @@ namespace GenOnlineService.Controllers
 											string hwid_0 = data.ContainsKey("reserved_0") ? data["reserved_0"].ToString() : "NONE";
 											string hwid_1 = data.ContainsKey("reserved_1") ? data["reserved_1"].ToString() : "NONE";
 											string hwid_2 = data.ContainsKey("reserved_2") ? data["reserved_2"].ToString() : "NONE";
-											await Database.Functions.Auth.RegisterUserDevice(GlobalDatabaseInstance.g_Database, user_id, hwid_0, hwid_1, hwid_2, ipAddr);
+											await Database.UserDevices.RegisterUserDevice(_db, user_id, hwid_0, hwid_1, hwid_2, ipAddr);
 										}
 
 										string exe_crc = data.ContainsKey("exe_crc") ? data["exe_crc"].ToString() : "NONE";

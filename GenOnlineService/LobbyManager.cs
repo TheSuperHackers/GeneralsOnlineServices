@@ -19,6 +19,7 @@
 using Amazon.S3.Model;
 using Discord;
 using GenOnlineService.Controllers;
+using Microsoft.EntityFrameworkCore;
 using MySqlX.XDevAPI;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -788,7 +789,7 @@ namespace GenOnlineService
 			return strMapPath;
 		}
 
-		public async Task UpdateMap(string strMap, string strMapPath, bool bOfficialMap, int newMaxPlayers)
+		public async Task UpdateMap(AppDbContext _db, string strMap, string strMapPath, bool bOfficialMap, int newMaxPlayers)
 		{
 			int oldMaxPlayers = MaxPlayers;
 			MapName = strMap;
@@ -818,26 +819,26 @@ namespace GenOnlineService
 			// only if official, since we cant guarantee if they log in on another machine that the map is installed
 			if (bOfficialMap)
 			{
-				await Database.Functions.Auth.SetFavorite_Map(GlobalDatabaseInstance.g_Database, Owner, strMapPath);
+				await Database.Users.SetFavorite_Map(_db, Owner, strMapPath);
 			}
 
 			DirtyRetransmit();
 		}
 
-		public async Task UpdateStartingCash(UInt32 newStartingCash)
+		public async Task UpdateStartingCash(AppDbContext _db, UInt32 newStartingCash)
 		{
 			StartingCash = newStartingCash;
 
-			await Database.Functions.Auth.SetFavorite_StartingMoney(GlobalDatabaseInstance.g_Database, Owner, (int)newStartingCash);
+			await Database.Users.SetFavorite_StartingMoney(_db, Owner, (int)newStartingCash);
 
 			DirtyRetransmit();
 		}
 
-		public async Task UpdateLimitSuperweapons(bool bLimitSuperweapons)
+		public async Task UpdateLimitSuperweapons(AppDbContext _db, bool bLimitSuperweapons)
 		{
 			IsLimitSuperweapons = bLimitSuperweapons;
 
-			await Database.Functions.Auth.SetFavorite_LimitSuperweapons(GlobalDatabaseInstance.g_Database, Owner, bLimitSuperweapons);
+			await Database.Users.SetFavorite_LimitSuperweapons(_db, Owner, bLimitSuperweapons);
 
 			DirtyRetransmit();
 		}
@@ -1064,19 +1065,19 @@ namespace GenOnlineService
 			DirtyRetransmit();
 		}
 
-		public async Task UpdateSide(int newSide, int start_pos)
+		public async Task UpdateSide(AppDbContext _db, int newSide, int start_pos)
 		{
 			Side = newSide;
 
-			await Database.Functions.Auth.SetFavorite_Side(GlobalDatabaseInstance.g_Database, UserID, newSide);
+			await Database.Users.SetFavorite_Side(_db, UserID, newSide);
 
 			DirtyRetransmit();
 		}
 
-		public async Task UpdateColor(int newColor)
+		public async Task UpdateColor(AppDbContext _db, int newColor)
 		{
 			Color = newColor;
-			await Database.Functions.Auth.SetFavorite_Color(GlobalDatabaseInstance.g_Database, UserID, newColor);
+			await Database.Users.SetFavorite_Color(_db, UserID, newColor);
 
 			DirtyRetransmit();
 		}

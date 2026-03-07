@@ -50,17 +50,6 @@ using static Database.Functions;
 using static Database.Functions.Auth;
 using static Database.Functions.Lobby;
 
-public enum EAccountType
-{
-	Unknown = -1,
-	Steam = 0,
-	Discord = 1,
-	Reserved = 2,
-	Reserved2 = 3,
-	GameReplays = 4,
-}
-
-
 
 
 
@@ -90,26 +79,7 @@ namespace Database
 	{
 		public static class ServiceStats
 		{
-			public async static Task CommitStats(MySQLInstance m_Inst, int day_of_year, int hour_of_day, int player_peak, int lobbies_peak)
-			{
-				await m_Inst.Query("INSERT INTO service_stats SET day_of_year=@day_of_year, hour_of_day=@hour_of_day, player_peak=@player_peak, lobbies_peak=@lobbies_peak ON DUPLICATE KEY UPDATE player_peak=GREATEST(player_peak, @player_peak), lobbies_peak=GREATEST(lobbies_peak, @lobbies_peak);",
-					new()
-					{
-						{ "@day_of_year", day_of_year },
-						{ "@hour_of_day", hour_of_day },
-						{ "@player_peak", player_peak },
-						{ "@lobbies_peak", lobbies_peak }
-					}
-				);
 
-				// TODO_URGENT: Handle year roll over
-				await m_Inst.Query("DELETE FROM service_stats WHERE day_of_year<(@day_of_year - 30);",
-					new()
-					{
-						{ "@day_of_year", day_of_year }
-					}
-				);
-			}
 		}
 
 		public static class MatchHistory
@@ -965,62 +935,6 @@ namespace Database
 				);
 			}
 
-
-			public async static Task SetFavorite_Color(MySQLInstance m_Inst, Int64 user_id, int favorite_color)
-			{
-				await m_Inst.Query("UPDATE users SET favorite_color=@favorite_color WHERE user_id=@user_id LIMIT 1;",
-					new()
-					{
-						{ "@favorite_color", favorite_color },
-						{ "@user_id", user_id }
-					}
-				);
-			}
-
-			public async static Task SetFavorite_Side(MySQLInstance m_Inst, Int64 user_id, int favorite_side)
-			{
-				await m_Inst.Query("UPDATE users SET favorite_side=@favorite_side WHERE user_id=@user_id LIMIT 1;",
-					new()
-					{
-						{ "@favorite_side", favorite_side },
-						{ "@user_id", user_id }
-					}
-				);
-			}
-
-			public async static Task SetFavorite_Map(MySQLInstance m_Inst, Int64 user_id, string favorite_map)
-			{
-				await m_Inst.Query("UPDATE users SET favorite_map=@favorite_map WHERE user_id=@user_id LIMIT 1;",
-					new()
-					{
-						{ "@favorite_map", favorite_map },
-						{ "@user_id", user_id }
-					}
-				);
-			}
-
-			public async static Task SetFavorite_StartingMoney(MySQLInstance m_Inst, Int64 user_id, int favorite_starting_money)
-			{
-				await m_Inst.Query("UPDATE users SET favorite_starting_money=@favorite_starting_money WHERE user_id=@user_id LIMIT 1;",
-					new()
-					{
-						{ "@favorite_starting_money", favorite_starting_money },
-						{ "@user_id", user_id }
-					}
-				);
-			}
-
-			public async static Task SetFavorite_LimitSuperweapons(MySQLInstance m_Inst, Int64 user_id, bool favorite_limit_superweapons)
-			{
-				await m_Inst.Query("UPDATE users SET favorite_limit_superweapons=@favorite_limit_superweapons WHERE user_id=@user_id LIMIT 1;",
-					new()
-					{
-						{ "@favorite_limit_superweapons", favorite_limit_superweapons },
-						{ "@user_id", user_id }
-					}
-				);
-			}
-
 			public async static Task UpdatePlayerStat(MySQLInstance m_Inst, Int64 user_id, int stat_id, int stat_val)
 			{
 				await m_Inst.Query("INSERT INTO user_stats_v2 (user_id, stats) VALUES (@user_id, JSON_OBJECT(@stat_key_raw, @stat_val)) ON DUPLICATE KEY UPDATE stats = JSON_SET(stats, @stat_key_formatted, @stat_val);",
@@ -1322,21 +1236,6 @@ namespace Database
 				}
 			}
 
-
-			private static string GenerateSessionToken()
-			{
-				const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-				StringBuilder sb = new StringBuilder(32);
-				Random random = new Random();
-
-				for (int i = 0; i < 32; i++)
-				{
-					sb.Append(chars[random.Next(chars.Length)]);
-				}
-
-				return sb.ToString();
-			}
-
 			public static async Task CleanupPendingLogin(MySQLInstance m_Inst, string strGameCode)
 			{
 				strGameCode = strGameCode.ToUpper();
@@ -1348,34 +1247,6 @@ namespace Database
 					}
 				);
 			}
-
-			public async static Task RegisterUserDevice(MySQLInstance m_Inst, Int64 userID, string hwid_0, string hwid_1, string hwid_2, string ipAddr)
-			{
-				// raw version
-				string hwid_3 = hwid_0.ToUpper();
-				string hwid_4 = hwid_1.ToUpper();
-				string hwid_5 = hwid_2.ToUpper();
-
-				// hash everything
-				hwid_0 = Helpers.ComputeMD5Hash(hwid_0).ToUpper();
-				hwid_1 = Helpers.ComputeMD5Hash(hwid_1).ToUpper();
-				hwid_2 = Helpers.ComputeMD5Hash(hwid_2).ToUpper();
-
-				var res = await m_Inst.Query("INSERT IGNORE INTO user_devices(user_id, hwid_0, hwid_1, hwid_2, hwid_3, hwid_4, hwid_5, ip_addr) VALUES (@user_id, @hwid_0, @hwid_1, @hwid_2, @hwid_3, @hwid_4, @hwid_5, @ip_addr);",
-				new()
-				{
-					{ "@user_id", userID },
-					{ "@hwid_0", hwid_0 },
-					{ "@hwid_1", hwid_1 },
-					{ "@hwid_2", hwid_2 },
-					{ "@hwid_3", hwid_3 },
-					{ "@hwid_4", hwid_4 },
-					{ "@hwid_5", hwid_5 },
-					{ "@ip_addr", ipAddr }
-				}
-				);
-			}
-
 
 			public async static Task<HashSet<Int64>> GetFriends(MySQLInstance m_Inst, Int64 user_id)
 			{
@@ -1565,13 +1436,6 @@ namespace Database
 				Ghost = 2,
 				DevAccount = 3
 			}
-
-// 			public enum ESessionType
-// 			{
-// 				Unknown = -1,
-// 				Website = 0,
-// 				Game = 1
-// 			}
 
 			internal static async Task CreateUserIfNotExists_DevAccount(MySQLInstance m_Inst, Int64 user_id, string display_name)
 			{

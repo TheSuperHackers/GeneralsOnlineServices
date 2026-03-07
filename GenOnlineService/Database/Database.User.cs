@@ -20,6 +20,21 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System.Text.Json;
 using static Database.Functions.Auth;
+
+public class UserDevice
+{
+	public Int64 UserID { get; set; }
+
+	public string HWID_0 { get; set; } = String.Empty;
+	public string HWID_1 { get; set; } = String.Empty;
+	public string HWID_2 { get; set; } = String.Empty;
+	public string HWID_3 { get; set; } = String.Empty;
+	public string HWID_4 { get; set; } = String.Empty;
+	public string HWID_5 { get; set; } = String.Empty;
+
+	public string IPAddress { get; set; } = String.Empty;
+}
+
 public class User
 {
 	public Int64 ID { get; set; }
@@ -73,6 +88,26 @@ public class UserLobbyPreferences
 	public bool favorite_limit_superweapons = false;
 }
 
+public class UserDevicesConfiguration : IEntityTypeConfiguration<UserDevice>
+{
+	public void Configure(EntityTypeBuilder<UserDevice> builder)
+	{
+		builder.ToTable("user_devices");
+
+		// prim key
+		builder.HasKey(e => new { e.UserID, e.HWID_0, e.HWID_1, e.HWID_2, e.IPAddress});
+
+		builder.Property(e => e.UserID).HasColumnName("user_id");
+		builder.Property(e => e.HWID_0).HasColumnName("hwid_0").HasColumnType("varchar(128)");
+		builder.Property(e => e.HWID_0).HasColumnName("hwid_1").HasColumnType("varchar(128)");
+		builder.Property(e => e.HWID_0).HasColumnName("hwid_2").HasColumnType("varchar(128)");
+		builder.Property(e => e.HWID_0).HasColumnName("hwid_3").HasColumnType("varchar(50)");
+		builder.Property(e => e.HWID_0).HasColumnName("hwid_4").HasColumnType("varchar(50)");
+		builder.Property(e => e.HWID_0).HasColumnName("hwid_5").HasColumnType("varchar(50)");
+		builder.Property(e => e.HWID_0).HasColumnName("ip_addr").HasColumnType("varchar(45)");
+	}
+}
+
 public class UserConfiguration : IEntityTypeConfiguration<User>
 {
 	public void Configure(EntityTypeBuilder<User> builder)
@@ -106,12 +141,66 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
 		builder.Property(e => e.BanReason).HasColumnName("ban_reason").HasColumnType("varchar(128)"); ;
 		builder.Property(e => e.BannedBy).HasColumnName("banned_by").HasColumnType("varchar(50)"); ;
 		builder.Property(e => e.BanVerifiedBy).HasColumnName("ban_verified_by").HasColumnType("varchar(50)"); ;
-		builder.Property(e => e.BanAliases).HasColumnName("ban_alises").HasColumnType("varchar(50)"); ;
+		builder.Property(e => e.BanAliases).HasColumnName("ban_aliases").HasColumnType("varchar(50)"); ;
 	}
 }
 
 namespace Database
 {
+	public static class UserDevices
+	{
+		public static readonly Func<AppDbContext, long, string, string, string, Task<UserDevice?>> FindDevice =
+				EF.CompileAsyncQuery(
+					(AppDbContext db, long userId, string h0, string h1, string h2) =>
+						db.UserDevices.FirstOrDefault(d =>
+							d.UserID == userId &&
+							d.HWID_0 == h0 &&
+							d.HWID_1 == h1 &&
+							d.HWID_2 == h2)
+				);
+
+		public static async Task RegisterUserDevice(
+			AppDbContext db,
+			long userId,
+			string hwid_0,
+			string hwid_1,
+			string hwid_2,
+			string ipAddr)
+		{
+			// raw versions
+			string hwid_3 = hwid_0.ToUpper();
+			string hwid_4 = hwid_1.ToUpper();
+			string hwid_5 = hwid_2.ToUpper();
+
+			// hashed versions
+			string h0 = Helpers.ComputeMD5Hash(hwid_0).ToUpper();
+			string h1 = Helpers.ComputeMD5Hash(hwid_1).ToUpper();
+			string h2 = Helpers.ComputeMD5Hash(hwid_2).ToUpper();
+
+			// check if exists (precompiled query)
+			var existing = await FindDevice(db, userId, h0, h1, h2);
+			if (existing != null)
+				return;
+
+			// insert new (if doesnt exist)
+			var device = new UserDevice
+			{
+				UserID = userId,
+				HWID_0 = h0,
+				HWID_1 = h1,
+				HWID_2 = h2,
+				HWID_3 = hwid_3,
+				HWID_4 = hwid_4,
+				HWID_5 = hwid_5,
+				IPAddress = ipAddr
+			};
+
+			db.UserDevices.Add(device);
+			await db.SaveChangesAsync();
+		}
+	}
+
+
 	public static class Users
 	{
 		private static readonly Func<AppDbContext, long, Task<bool>> _isUserAdminQuery =
@@ -174,6 +263,48 @@ namespace Database
 		public static Task<UserLobbyPreferences?> GetUserLobbyPreferences(AppDbContext db, long userId)
 		{
 			return _getUserLobbyPreferencesQuery(db, userId);
+		}
+
+		// TODO_EFCORE: check all queries, determine which ones should be moved to precompiled query
+		public static async Task SetFavorite_LimitSuperweapons(
+			AppDbContext db,
+			long userId,
+			bool bLimitSuperweapons)
+		{
+			// TODO_EFCORE: Check all sets, some may want to be execute update instead of db.SaveChangesAsync(); as this requires a lookup first
+			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.LimitSuperweapons, bLimitSuperweapons));
+		}
+
+		public static async Task SetFavorite_Map(
+			AppDbContext db,
+			long userId,
+			string strMap)
+		{
+			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteMap, strMap));
+		}
+
+		public static async Task SetFavorite_StartingMoney(
+			AppDbContext db,
+			long userId,
+			int startingMoney)
+		{
+			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteStartingMoney, startingMoney));
+		}
+
+		public static async Task SetFavorite_Side(
+			AppDbContext db,
+			long userId,
+			int side)
+		{
+			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteSide, side));
+		}
+
+		public static async Task SetFavorite_Color(
+			AppDbContext db,
+			long userId,
+			int color)
+		{
+			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteColor, color));
 		}
 	}
 }

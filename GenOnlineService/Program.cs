@@ -242,7 +242,10 @@ namespace GenOnlineService
 		{
 			int hourOfDay = DateTime.Now.Hour;
 			// store stats
-			await Database.Functions.ServiceStats.CommitStats(GlobalDatabaseInstance.g_Database, DateTime.Now.DayOfYear, hourOfDay, numPlayers, numLobbies);
+
+			using var scope = ServiceLocator.Services.CreateScope();
+			var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+			await Database.ServiceStats.CommitStats(db, DateTime.Now.DayOfYear, hourOfDay, numPlayers, numLobbies);
 		}
 	}
 

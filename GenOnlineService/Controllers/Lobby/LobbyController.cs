@@ -442,7 +442,7 @@ namespace GenOnlineService.Controllers
 
 										if (strMap != null && strMapPath != null)
 										{
-											await lobby.UpdateMap(strMap, strMapPath, bOfficialMap, maxPlayers);
+											await lobby.UpdateMap(_db, strMap, strMapPath, bOfficialMap, maxPlayers);
 										}
 									}
 								}
@@ -454,7 +454,7 @@ namespace GenOnlineService.Controllers
 									{
 										int side = data["side"].GetInt32();
 										int start_pos = data["start_pos"].GetInt32();
-										await SourceMember.UpdateSide(side, start_pos);
+										await SourceMember.UpdateSide(_db, side, start_pos);
 									}
 								}
 								else if (field == ELobbyUpdateField.MY_COLOR)
@@ -462,7 +462,7 @@ namespace GenOnlineService.Controllers
 									if (data.ContainsKey("color"))
 									{
 										int color = data["color"].GetInt32();
-										await SourceMember.UpdateColor(color);
+										await SourceMember.UpdateColor(_db, color);
 									}
 								}
 								else if (field == ELobbyUpdateField.MY_START_POS)
@@ -486,7 +486,7 @@ namespace GenOnlineService.Controllers
 									if (data.ContainsKey("startingcash"))
 									{
 										UInt32 startingCash = data["startingcash"].GetUInt32();
-										await lobby.UpdateStartingCash(startingCash);
+										await lobby.UpdateStartingCash(_db, startingCash);
 									}
 								}
 								else if (field == ELobbyUpdateField.LOBBY_LIMIT_SUPERWEAPONS)
@@ -494,7 +494,7 @@ namespace GenOnlineService.Controllers
 									if (data.ContainsKey("limit_superweapons"))
 									{
 										bool bLimitSuperweapons = data["limit_superweapons"].GetBoolean();
-										await lobby.UpdateLimitSuperweapons(bLimitSuperweapons);
+										await lobby.UpdateLimitSuperweapons(_db, bLimitSuperweapons);
 									}
 								}
 								else if (field == ELobbyUpdateField.HOST_ACTION_FORCE_START)
@@ -563,7 +563,7 @@ namespace GenOnlineService.Controllers
 										{
 											if (TargetMember.IsAI())
 											{
-												await TargetMember.UpdateSide(side, start_pos);
+												await TargetMember.UpdateSide(_db, side, start_pos);
 											}
 										}
 									}
@@ -581,7 +581,7 @@ namespace GenOnlineService.Controllers
 										{
 											if (TargetMember.IsAI())
 											{
-												await TargetMember.UpdateColor(color);
+												await TargetMember.UpdateColor(_db, color);
 											}
 										}
 									}
