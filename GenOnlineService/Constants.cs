@@ -168,7 +168,8 @@ namespace GenOnlineService
 			gen_online_30hz = 0,
 			gen_online_60hz = 1,
 			genhub = 2,
-			communityoutpost_chat = 3	
+			communityoutpost_chat = 3,
+			superhackers_community_patch_client = 4
 		}
 
 		public static ConcurrentDictionary<EKnownClients, EUserSessionType> KnownClientSessionTypes = new()
