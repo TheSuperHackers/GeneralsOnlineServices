@@ -169,7 +169,8 @@ namespace GenOnlineService
 			gen_online_60hz = 1,
 			genhub = 2,
 			communityoutpost_chat = 3,
-			superhackers_community_patch_client = 4
+			superhackers_community_patch_client = 4,
+			custom_third_party_client = 5
 		}
 
 		public static ConcurrentDictionary<EKnownClients, EUserSessionType> KnownClientSessionTypes = new()
@@ -178,7 +179,8 @@ namespace GenOnlineService
 			[EKnownClients.gen_online_60hz] = EUserSessionType.GameClient,
 			[EKnownClients.genhub] = EUserSessionType.GameLauncher,
 			[EKnownClients.communityoutpost_chat] = EUserSessionType.ChatClient,
-			[EKnownClients.superhackers_community_patch_client] = EUserSessionType.GameClient
+			[EKnownClients.superhackers_community_patch_client] = EUserSessionType.GameClient,
+			[EKnownClients.custom_third_party_client] = EUserSessionType.GameClient
 		};
 	}
 
