@@ -17,6 +17,7 @@
 */
 
 using Amazon.S3.Model;
+using Discord.Commands;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -382,18 +383,13 @@ namespace GenOnlineService.Controllers
 					{
 						if (dictDisplayNames.ContainsKey(friend_user_id)) // no display name, they probably dont exist anymore, so dont return them
 						{
-							// are they online?
-							SharedUserData? targetUserData = WebSocketManager.GetSharedDataForUser(friend_user_id);
+							string strPresence = UserPresence.DetermineUserStatusFromAllSessions(friend_user_id, out bool isOnline);
 
-							// TODO_EFCORE: What user status do we use if the person is logged in multiple times? prefer in-game client?
-							//string strPresence = targetUserData != null ? UserPresence.DetermineUserStatus(targetUserData) : "Offline";
-							string strPresence = "TODO_EFCORE";
-							
 							result.friends.Add(new FriendEntry()
 							{
 								user_id = friend_user_id,
 								display_name = dictDisplayNames[friend_user_id],
-								online = targetUserData != null,
+								online = isOnline,
 								presence = strPresence
 							});
 						}

@@ -2091,46 +2091,80 @@ namespace GenOnlineService
 
 	public static class UserPresence
 	{
-		public static string DetermineUserStatus(UserSession? userData)
+		public enum EPresencePriority
 		{
-			if (userData == null)
-			{
-				return "Offline";
-			}
+			Highest = 2,
+			Middle = 1,
+			Lowest = 0
+		}
 
-			if (userData.currentLobbyID == -1)
-			{
-				return "In Server List / Chat Room";
-			}
-			else
-			{
-				var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
-				Lobby? plrLobby = lobbyManager.GetLobby(userData.currentLobbyID);
+		public static string DetermineUserStatusFromAllSessions(Int64 user_id, out bool IsOnline)
+		{
+			List<UserSession> lstUserSessions = WebSocketManager.GetAllDataFromUser(user_id);
+			IsOnline = false;
 
-				if (plrLobby == null)
+			string strOverallPresence = "Offline";
+			UserPresence.EPresencePriority overallPriority = UserPresence.EPresencePriority.Lowest;
+
+			foreach (UserSession userData in lstUserSessions)
+			{
+				string strThisPresence = "Offline";
+				EPresencePriority thisPriority = EPresencePriority.Lowest;
+
+				if (userData == null)
 				{
-					return "In A Lobby";
+					thisPriority = EPresencePriority.Lowest;
+					strThisPresence = "Offline";
+				}
+
+				IsOnline = true;
+
+				if (userData.currentLobbyID == -1)
+				{
+					thisPriority = EPresencePriority.Middle;
+					strThisPresence = "In Server List / Chat Room";
 				}
 				else
 				{
-					if (plrLobby.State == ELobbyState.GAME_SETUP)
+					var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+					Lobby? plrLobby = lobbyManager.GetLobby(userData.currentLobbyID);
+
+					thisPriority = EPresencePriority.Highest;
+
+					if (plrLobby == null)
 					{
-						return String.Format("In lobby '{0}' - Waiting on game setup", plrLobby.Name);
-					}
-					else if (plrLobby.State == ELobbyState.INGAME)
-					{
-						return String.Format("In lobby '{0}' -  Match In Progress", plrLobby.Name);
-					}
-					else if (plrLobby.State == ELobbyState.COMPLETE)
-					{
-						return String.Format("In lobby '{0}' - Game Just Finished", plrLobby.Name);
+						strThisPresence = "In A Lobby";
 					}
 					else
 					{
-						return String.Format("In lobby '{0}'", plrLobby.Name);
+						if (plrLobby.State == ELobbyState.GAME_SETUP)
+						{
+							strThisPresence = String.Format("In lobby '{0}' - Waiting on game setup", plrLobby.Name);
+						}
+						else if (plrLobby.State == ELobbyState.INGAME)
+						{
+							strThisPresence = String.Format("In lobby '{0}' -  Match In Progress", plrLobby.Name);
+						}
+						else if (plrLobby.State == ELobbyState.COMPLETE)
+						{
+							strThisPresence = String.Format("In lobby '{0}' - Game Just Finished", plrLobby.Name);
+						}
+						else
+						{
+							strThisPresence = String.Format("In lobby '{0}'", plrLobby.Name);
+						}
 					}
 				}
+
+				// higher than our current priority?
+				if (thisPriority > overallPriority)
+				{
+					strOverallPresence = strThisPresence;
+					overallPriority = thisPriority;
+				}
 			}
+
+			return strOverallPresence;
 		}
 	}
 

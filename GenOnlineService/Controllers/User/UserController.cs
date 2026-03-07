@@ -99,7 +99,7 @@ namespace GenOnlineService.Controllers
 					{
 						GET_ActiveUsers_UserEntry userEntry = new();
 						userEntry.name = userSharedData.m_strDisplayName;
-						userEntry.status = UserPresence.DetermineUserStatus(sessionData.Value);
+						userEntry.status = UserPresence.DetermineUserStatusFromAllSessions(sessionData.Key, out bool isOnline);
 						userEntry.client_id = sessionData.Value.m_client_id;
 						userEntry.duration = TimeSpanToHumanReadableString(sessionData.Value.GetDuration());
 
