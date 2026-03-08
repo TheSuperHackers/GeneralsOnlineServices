@@ -318,7 +318,8 @@ namespace GenOnlineService.Controllers
 								DailyStatsManager.RegisterOutcome(army, won);
 
 								// store in DB
-								await Database.Functions.Lobby.CommitPlayerOutcome(GlobalDatabaseInstance.g_Database, slotIndexInLobby, match_id,
+								await using var db = await _dbFactory.CreateDbContextAsync();
+								await Database.MatchHistory.CommitPlayerOutcome(db, slotIndexInLobby, match_id,
 										buildings_built, buildings_killed, buildings_lost, units_built, units_killed, units_lost, total_money, won);
 							}
 						}

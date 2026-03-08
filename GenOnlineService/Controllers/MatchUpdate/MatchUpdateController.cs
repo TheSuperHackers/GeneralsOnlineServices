@@ -16,20 +16,21 @@
 **    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+using Amazon.S3;
+using Amazon.S3.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System;
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
-using Amazon.S3;
-using Amazon.S3.Model;
-using System.ComponentModel.DataAnnotations;
 using static Database.Functions.Lobby;
 
 namespace GenOnlineService.Controllers
@@ -117,6 +118,12 @@ namespace GenOnlineService.Controllers
 	[Route("env/{environment}/contract/{contract_version}/MatchHistory")]
 	public class API_MatchHistoryController : ControllerBase
 	{
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
+		public API_MatchHistoryController(IDbContextFactory<AppDbContext> dbFactory)
+		{
+			_dbFactory = dbFactory;
+		}
+
 		[HttpGet("{startingMatchID}")]
 		// TODO: Move to Authorize for this
 		public async Task<APIResult> GetHistorySince([FromHeader(Name = "X-Api-Key")] string apiKey, Int64 startingMatchID)
@@ -137,8 +144,8 @@ namespace GenOnlineService.Controllers
 
 			const Int64 maxLobbiesPerRequest = 99; // actually 100, but query is <= 
 
-			
-			result.matches = await Database.Functions.MatchHistory.GetMatchesInRange(GlobalDatabaseInstance.g_Database, startingMatchID, startingMatchID + maxLobbiesPerRequest);
+			await using var db = await _dbFactory.CreateDbContextAsync();
+			result.matches = await Database.MatchHistory.GetMatchesInRange(db, startingMatchID, startingMatchID + maxLobbiesPerRequest);
 
 			return result;
 		}
@@ -161,7 +168,8 @@ namespace GenOnlineService.Controllers
 				return result;
 			}
 
-			result.highest_match_id = await Database.Functions.MatchHistory.GetHighestMatchID(GlobalDatabaseInstance.g_Database);
+			await using var db = await _dbFactory.CreateDbContextAsync();
+			result.highest_match_id = await Database.MatchHistory.GetHighestMatchID(db);
 			return result;
 		}
 	}

@@ -902,7 +902,10 @@ namespace GenOnlineService
 				if (WasPVPAtStart() && !HadAIAtStart())
 				{
 					// create placeholder
-					await Database.Functions.Lobby.CreatePlaceholderMatchHistory(GlobalDatabaseInstance.g_Database, this);
+					using var scope = ServiceLocator.Services.CreateScope();
+					var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+					await using var db = await factory.CreateDbContextAsync();
+					await Database.MatchHistory.CreatePlaceholderMatchHistory(db, this);
 
 					// calculate first probe time
 					CalculateNextProbeTime(true);
