@@ -329,12 +329,98 @@ namespace GenOnlineService
 		public static DiscordBot? g_Discord = null;
 
 		// TODO_EFCORE: Do this regularly
-		static async Task DoCleanup(bool bStartup)
+		static async Task DoCleanup(AppDbContext db, bool bStartup)
 		{
-			using var scope = ServiceLocator.Services.CreateScope();
-			var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
-			await using var db = await factory.CreateDbContextAsync();
 			await Database.PendingLogins.Cleanup(db, bStartup);
+		}
+
+		private static async Task InitializeDatabase(WebApplicationBuilder builder)
+		{
+			// TODO_EFCORE: Check connection immediately like old impl
+			if (Program.g_Config == null)
+			{
+				throw new Exception("Config is null. Check config file exists.");
+			}
+
+			IConfiguration? dbSettings = Program.g_Config.GetSection("Database");
+
+			if (dbSettings == null)
+			{
+				throw new Exception("Database section in config is null / not set in config");
+			}
+
+			string? hostname = dbSettings.GetValue<string>("db_host");
+			string? dbname = dbSettings.GetValue<string>("db_name");
+			string? username = dbSettings.GetValue<string>("db_username");
+			string? password = dbSettings.GetValue<string>("db_password");
+			UInt16? port = dbSettings.GetValue<UInt16>("db_port");
+
+			int? db_min_poolsize = dbSettings.GetValue<int>("db_min_poolsize");
+			int? db_max_poolsize = dbSettings.GetValue<int>("db_max_poolsize");
+			bool? db_use_pooling = dbSettings.GetValue<bool>("db_use_pooling");
+			bool? db_conn_reset = dbSettings.GetValue<bool>("db_conn_reset");
+			int? db_connect_timeout = dbSettings.GetValue<int>("db_connect_timeout");
+			int? db_command_timeout = dbSettings.GetValue<int>("db_command_timeout");
+
+			if (hostname == null)
+			{
+				throw new Exception("DB Hostname is null / not set in config");
+			}
+
+			if (dbname == null)
+			{
+				throw new Exception("DB Hostname is null / not set in config");
+			}
+
+			if (username == null)
+			{
+				throw new Exception("DB Hostname is null / not set in config");
+			}
+
+			if (password == null)
+			{
+				throw new Exception("DB Hostname is null / not set in config");
+			}
+
+			if (port == null)
+			{
+				throw new Exception("DB Hostname is null / not set in config");
+			}
+
+			// TODO_EFCORE: Log exceptions to disk again
+			if (!Directory.Exists("Exceptions"))
+			{
+				Directory.CreateDirectory("Exceptions");
+			}
+
+			// EFCore connect
+			{
+				//var builder = WebApplication.CreateBuilder(args);
+
+				var csb = new MySql.Data.MySqlClient.MySqlConnectionStringBuilder
+				{
+					Server = hostname,
+					Port = (uint)port,
+					Database = dbname,
+					UserID = username,
+					Password = password,
+					ConnectionTimeout = (uint)db_connect_timeout,
+					DefaultCommandTimeout = (uint)db_command_timeout,
+					SslMode = MySql.Data.MySqlClient.MySqlSslMode.Preferred
+				};
+
+				// TODO_EFCORE: Consider use of ExecuteDeleteAsync and options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+				// TODO_EFCORE: Move to AddPooledDbContextFactory instead and use private readonly IDbContextFactory<AppDbContext> _factory;
+				builder.Services.AddPooledDbContextFactory<AppDbContext>(options =>
+				{
+					options.UseMySql(
+						csb.ConnectionString,
+						ServerVersion.AutoDetect(csb.ConnectionString));
+
+					options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+
+				});
+			}
 		}
 
 		private static Task AdditionalValidation(TokenValidatedContext context)
@@ -878,6 +964,9 @@ namespace GenOnlineService
 
 			});
 
+			// add DB
+			await InitializeDatabase(builder);
+
 			var app = builder.Build();
 			ServiceLocator.Services = app.Services;
 
@@ -919,8 +1008,6 @@ namespace GenOnlineService
 
 			app.MapControllers();
 
-			// do a cleanup on startup
-			await DoCleanup(true);
 
 			// cleanup
 			System.Timers.Timer timerCleanup = new System.Timers.Timer(5000); // 5s tick
@@ -1061,6 +1148,9 @@ namespace GenOnlineService
 			{
 				var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
 				await using var db = await factory.CreateDbContextAsync();
+
+				// do a cleanup on startup
+				await DoCleanup(db, true);
 				await DailyStatsManager.LoadFromDB(db);
 			}
 
