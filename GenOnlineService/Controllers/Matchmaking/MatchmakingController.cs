@@ -77,7 +77,7 @@ namespace GenOnlineService.Controllers
 
 						Int64 user_id = TokenHelper.GetUserID(this);
 						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-						if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
+						if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay))
 						{
 							UserSession? playerSession = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 
@@ -105,7 +105,7 @@ namespace GenOnlineService.Controllers
 			// widen the search
 			Int64 user_id = TokenHelper.GetUserID(this);
 			EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
+			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay))
 			{
 				UserSession? playerSession = WebSocketManager.GetSessionFromUser(user_id, sessionType); ;
 
@@ -122,7 +122,7 @@ namespace GenOnlineService.Controllers
 		{
 			Int64 user_id = TokenHelper.GetUserID(this);
 			EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
+			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay))
 			{
 				UserSession? playerSession = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 

@@ -34,8 +34,6 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
-using static Database.Functions;
-using static Database.Functions.Auth;
 
 namespace GenOnlineService
 {

@@ -29,7 +29,6 @@ using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
-using static Database.Functions;
 public class LatencyEntry
 {
 	public Int64 user_id { get; set; }
@@ -216,7 +215,7 @@ namespace GenOnlineService.Controllers
 					int leavingPersonSlot = -1;
 					Int64 user_id = TokenHelper.GetUserID(this);
 					EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
+					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay))
 					{
 						Lobby? lobby = _lobbyManager.GetLobby(lobbyID);
 						if (lobby != null)
@@ -292,7 +291,7 @@ namespace GenOnlineService.Controllers
 					{
 						Int64 user_id = TokenHelper.GetUserID(this);
 						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-						if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
+						if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay))
 						{
 							UserSession? sourceData = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 							if (sourceData != null)
@@ -696,7 +695,7 @@ namespace GenOnlineService.Controllers
 						{
 							Int64 user_id = TokenHelper.GetUserID(this);
 							EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-							if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
+							if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay))
 							{
 								UInt16 userPreferredPort = data["preferred_port"].GetUInt16();
 								bool bHasMap = data["has_map"].GetBoolean();

@@ -30,7 +30,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using ZstdSharp.Unsafe;
-using static Database.Functions.Auth;
 
 namespace GenOnlineService
 {
@@ -573,7 +572,7 @@ namespace GenOnlineService
 				{
 					userData = m_dictUserSessions[sessionType][userID];
 				}
-				await Database.Functions.Auth.FullyDestroyPlayerSession(GlobalDatabaseInstance.g_Database, userID, userData, true);
+				await SessionHelpers.FullyDestroyPlayerSession(userID, userData, true);
 			}
 			catch
 			{
@@ -1110,9 +1109,102 @@ namespace GenOnlineService
 		}
 	}
 
-	public static class GlobalDatabaseInstance
+	public enum ESessionAccessType
 	{
-		public static Database.MySQLInstance g_Database = new Database.MySQLInstance();
+		Authenticate, // log in and out
+		Social, // friends lists
+		ServerListReadOnly, // can read lobby list and players etc, but cannot join
+		StatsReadOnly, // can read stats for any user, but not write anything
+		Gameplay, // Create lobbies, Anticheat, Middleware login, Matchmaking, match screenshots, replays, join lobby, etc
+	};
+	public static class SessionHelpers
+	{
+		public static bool SessionTypeHasAccessTo(EUserSessionType sessType, ESessionAccessType accessType)
+		{
+			if (sessType == EUserSessionType.GameClient) // client can do anything
+			{
+				return true;
+			}
+			else if (sessType == EUserSessionType.ChatClient)
+			{
+				return false;
+			}
+
+			else if (sessType == EUserSessionType.GameLauncher)
+			{
+				return false;
+			}
+
+			return false;
+		}
+
+		public static async Task FullyDestroyPlayerSession(Int64 user_id, UserSession? userData, bool bMigrateLobbyIfPresent)
+		{
+			// NOTE: Dont assume userData is valid, use user_id for user id
+			Console.ForegroundColor = ConsoleColor.Cyan;
+			Console.WriteLine("FullyDestroyPlayerSession for user {0}", user_id);
+			Console.ForegroundColor = ConsoleColor.Gray;
+
+			// invalidate any TURN credentials
+			TURNCredentialManager.DeleteCredentialsForUser(user_id);
+
+			// TODO: Implement single point of presence? gets dicey if multiple logins
+			// TODO: Dont destroy this, just mark inactive/offline, we use this as a saved credential system
+
+			// session tied to this token (keep other ones attached to user_id, could be other machines)
+			// TODO_JWT: Remove table fully + set logged out
+			//await m_Inst.Query("DELETE FROM sessions WHERE user_id={0} AND session_type={1};", user_id, (int)ESessionType.Game);
+
+			// leave any lobby
+			Console.WriteLine("[Source 2] User {0} Leave Any Lobby", user_id);
+
+			var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+			lobbyManager.LeaveAnyLobby(user_id);
+
+
+			await lobbyManager.CleanupUserLobbiesNotStarted(user_id);
+
+			// remove from any matchmaking
+			if (userData != null)
+			{
+				MatchmakingManager.DeregisterPlayer(userData);
+			}
+
+			// TODO: Client needs to handle this... itll start returning 404
+		}
+
+		public async static Task SetUsedLoggedIn(Int64 userID, KnownClients.EKnownClients clientID, EUserSessionType sessionType)
+		{
+			// TODO_EFCORE: website uses this index as 1 (60hz) to 0 (30hz), update it to use new enum + support new clients, also need to update DB to match
+			// TODO_EFCORE: Move away from db for this and just have website login call endpoint on service
+			//UInt16 clientID = clientIDStr == "gen_online_60hz" ? (UInt16)1 : (UInt16)0;
+
+			Console.ForegroundColor = ConsoleColor.Cyan;
+			Console.WriteLine("StartSession deleing other sessions for user {0}", userID);
+			Console.ForegroundColor = ConsoleColor.Gray;
+
+			// kill any WS they had too, StartSession comes before WS connects
+			// disconnect any other sessions with this ID
+			UserSession? sess = GenOnlineService.WebSocketManager.GetSessionFromUser(userID, sessionType);
+			if (sess != null)
+			{
+				Console.ForegroundColor = ConsoleColor.Cyan;
+				Console.WriteLine("Found duplicate session for user {0}", userID);
+				Console.ForegroundColor = ConsoleColor.Gray;
+
+				UserWebSocketInstance? oldWS = GenOnlineService.WebSocketManager.GetWebSocketForSession(sess);
+				await GenOnlineService.WebSocketManager.DeleteSession(userID, sessionType, oldWS, false);
+			}
+		}
+	}
+
+	public enum EAccountType
+	{
+		Unknown = -1,
+		Steam = 0,
+		Discord = 1,
+		Ghost = 2,
+		DevAccount = 3
 	}
 
 	public class PlayerStats

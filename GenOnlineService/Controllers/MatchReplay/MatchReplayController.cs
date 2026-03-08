@@ -92,7 +92,7 @@ namespace GenOnlineService.Controllers
 			// must be in a lobby
 			Int64 user_id = TokenHelper.GetUserID(this);
 			EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay)) // technically a duplicate check, since role above should also validate this, but just to be safe and avoid any weird edge cases where somehow we get here without a valid user session, etc
+			if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay)) // technically a duplicate check, since role above should also validate this, but just to be safe and avoid any weird edge cases where somehow we get here without a valid user session, etc
 			{
 				UserSession? sourceData = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 				if (sourceData != null)

@@ -181,7 +181,7 @@ namespace GenOnlineService.Controllers
 					Int64 user_id = TokenHelper.GetUserID(this);
 
 					EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
+					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay))
 					{
 						List<JsonElement>? jsonReqData = JsonSerializer.Deserialize<List<JsonElement>>(jsonData, options);
 

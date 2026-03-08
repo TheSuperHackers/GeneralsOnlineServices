@@ -157,7 +157,7 @@ namespace GenOnlineService.Controllers
 					
 					Int64 user_id = TokenHelper.GetUserID(this);
 					EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.ServerListReadOnly))
+					if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.ServerListReadOnly))
 					{
 						UserSession? sourceData = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 
@@ -362,7 +362,7 @@ namespace GenOnlineService.Controllers
 						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
 
 						// check nullables also
-						if (user_id != -1 && strName != null && strMapName != null && strMapPath != null && strPassword != null && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay))
+						if (user_id != -1 && strName != null && strMapName != null && strMapPath != null && strPassword != null && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay))
 						{
 							// TODO: Handle failure here
 							// TODO_ASP: Remove ip address from db, not needed

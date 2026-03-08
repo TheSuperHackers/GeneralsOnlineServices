@@ -19,6 +19,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System;
 using System.Net;
@@ -47,11 +48,13 @@ namespace GenOnlineService.Controllers
 	{
 		private readonly ILogger<ConnectionOutcomeController> _logger;
 		private readonly LobbyManager _lobbyManager;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 
-		public ConnectionOutcomeController(LobbyManager lobbyManager, ILogger<ConnectionOutcomeController> logger)
+		public ConnectionOutcomeController(LobbyManager lobbyManager, ILogger<ConnectionOutcomeController> logger, IDbContextFactory<AppDbContext> dbFactory)
 		{
 			_logger = logger;
 			_lobbyManager = lobbyManager;
+			_dbFactory = dbFactory;
 		}
 
 		[HttpPost]
@@ -129,7 +132,8 @@ namespace GenOnlineService.Controllers
 									outcome = EConnectionState.NOT_CONNECTED;
 								}
 
-								await Database.Functions.Auth.StoreConnectionOutcome(GlobalDatabaseInstance.g_Database, protocol, outcome);
+								await using var db = await _dbFactory.CreateDbContextAsync();
+								await Database.ConnectionOutcomes.StoreConnectionOutcome(db, protocol, outcome);
 
 								Response.StatusCode = (int)HttpStatusCode.OK;
 							}

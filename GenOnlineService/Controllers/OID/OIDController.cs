@@ -224,7 +224,7 @@ namespace GenOnlineService.Controllers.LoginWithToken
 
 						Int64 user_id = TokenHelper.GetUserID(this);
 						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
-						if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, SessionHelpers.ESessionAccessType.Gameplay)) // only game clients should be doing middleware login
+						if (user_id != -1 && SessionHelpers.SessionTypeHasAccessTo(sessionType, ESessionAccessType.Gameplay)) // only game clients should be doing middleware login
 						{
 							UserSession? session = WebSocketManager.GetSessionFromUser(user_id, sessionType);
 							if (session != null)

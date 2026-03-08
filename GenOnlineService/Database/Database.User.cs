@@ -20,7 +20,6 @@ using GenOnlineService;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System.Text.Json;
-using static Database.Functions.Auth;
 
 public class PendingLogin
 {

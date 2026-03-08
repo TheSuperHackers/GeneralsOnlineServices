@@ -251,37 +251,6 @@ namespace GenOnlineService
 		}
 	}
 
-	public static class SessionHelpers
-	{
-		public enum ESessionAccessType
-		{
-			Authenticate, // log in and out
-			Social, // friends lists
-			ServerListReadOnly, // can read lobby list and players etc, but cannot join
-			StatsReadOnly, // can read stats for any user, but not write anything
-			Gameplay, // Create lobbies, Anticheat, Middleware login, Matchmaking, match screenshots, replays, join lobby, etc
-		};
-
-		public static bool SessionTypeHasAccessTo(EUserSessionType sessType, ESessionAccessType accessType)
-		{
-			if (sessType == EUserSessionType.GameClient) // client can do anything
-			{
-				return true;
-			}
-			else if (sessType == EUserSessionType.ChatClient)
-			{
-				return false;
-			}
-
-			else if (sessType == EUserSessionType.GameLauncher)
-			{
-				return false;
-			}
-
-			return false;
-		}
-	}
-
 	public static class TokenHelper
 	{
 		public static Int64 GetUserID(ControllerBase controller)
@@ -628,8 +597,6 @@ namespace GenOnlineService
 			{
 				g_Discord = new DiscordBot();
 			}
-
-			await GlobalDatabaseInstance.g_Database.Initialize(builder);
 
 			builder.Services.AddSingleton<LobbyManager>();
 
