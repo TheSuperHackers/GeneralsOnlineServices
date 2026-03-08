@@ -1424,7 +1424,9 @@ namespace GenOnlineService
 				if (lobby.LobbyType == ELobbyType.QuickMatch)
 				{
 					using var scope = _services.CreateScope();
-					var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+					var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+					await using var db = await factory.CreateDbContextAsync();
+
 					await Database.Functions.Leaderboards.UpdateLeaderboardAndElo(db, GlobalDatabaseInstance.g_Database, lobby);
                 }
 			}

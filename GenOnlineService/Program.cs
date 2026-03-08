@@ -16,34 +16,35 @@
 **    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+using Google.Protobuf.WellKnownTypes;
+using MaxMind.GeoIP2;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.WebSockets;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
-using Org.BouncyCastle.Crypto;
-using System.Security.Cryptography.X509Certificates;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication;
-using System.Text;
-using System.Net.Http.Headers;
-using Microsoft.Extensions.Options;
-using System.Text.Encodings.Web;
-using Microsoft.AspNetCore.WebSockets;
-using System.Collections.Concurrent;
-using System.Net.WebSockets;
-using Google.Protobuf.WellKnownTypes;
-using System.Xml;
-using System.Drawing;
-using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
 using Sentry;
-using MaxMind.GeoIP2;
-using Microsoft.AspNetCore.RateLimiting;
+using System.Collections.Concurrent;
+using System.Drawing;
+using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http.Headers;
+using System.Net.WebSockets;
+using System.Security.Claims;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
 using System.Threading.RateLimiting;
+using System.Threading.Tasks;
+using System.Xml;
 
 namespace GenOnlineService
 {
@@ -244,7 +245,8 @@ namespace GenOnlineService
 			// store stats
 
 			using var scope = ServiceLocator.Services.CreateScope();
-			var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+			var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+			await using var db = await factory.CreateDbContextAsync();
 			await Database.ServiceStats.CommitStats(db, DateTime.Now.DayOfYear, hourOfDay, numPlayers, numLobbies);
 		}
 	}
@@ -361,7 +363,8 @@ namespace GenOnlineService
 		static async Task DoCleanup(bool bStartup)
 		{
 			using var scope = ServiceLocator.Services.CreateScope();
-			var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+			var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+			await using var db = await factory.CreateDbContextAsync();
 			await Database.PendingLogins.Cleanup(db, bStartup);
 		}
 
@@ -1060,7 +1063,8 @@ namespace GenOnlineService
 					{
 						using (var scope = app.Services.CreateScope())
 						{
-							var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+							var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+							await using var db = await factory.CreateDbContextAsync();
 							await DailyStatsManager.SaveToDB(db);
 						}
 					}
@@ -1088,7 +1092,8 @@ namespace GenOnlineService
 			// load daily stats
 			using (var scope = app.Services.CreateScope())
 			{
-				var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+				var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+				await using var db = await factory.CreateDbContextAsync();
 				await DailyStatsManager.LoadFromDB(db);
 			}
 

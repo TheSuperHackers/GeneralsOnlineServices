@@ -21,6 +21,7 @@ using Discord.Commands;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System;
 using System.Net;
@@ -66,13 +67,13 @@ namespace GenOnlineService.Controllers
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class SocialController : ControllerBase
 	{
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 		private readonly ILogger<SocialController> _logger;
 
-		public SocialController(AppDbContext db, ILogger<SocialController> logger)
+		public SocialController(IDbContextFactory<AppDbContext> dbFactory, ILogger<SocialController> logger)
 		{
 			_logger = logger;
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		// Friends/Requests/<id>
@@ -353,7 +354,8 @@ namespace GenOnlineService.Controllers
 			lstCombined.AddRange(setFriends);
 			lstCombined.AddRange(setPendingRequests);
 
-			Dictionary<Int64, string> dictDisplayNames = await Database.Users.GetDisplayNameBulk(_db, lstCombined);
+			await using var db = await _dbFactory.CreateDbContextAsync();
+			Dictionary<Int64, string> dictDisplayNames = await Database.Users.GetDisplayNameBulk(db, lstCombined);
 
 			var options = new JsonSerializerOptions
 			{
@@ -442,7 +444,8 @@ namespace GenOnlineService.Controllers
 			HashSet<Int64> setBlocked = sourceData.GetSocialContainer().Blocked;
 #pragma warning restore CS8602 // Dereference of a possibly null reference.
 
-			Dictionary<Int64, string> dictDisplayNames = await Database.Users.GetDisplayNameBulk(_db, setBlocked.ToList());
+			await using var db = await _dbFactory.CreateDbContextAsync();
+			Dictionary<Int64, string> dictDisplayNames = await Database.Users.GetDisplayNameBulk(db, setBlocked.ToList());
 
 			var options = new JsonSerializerOptions
 			{

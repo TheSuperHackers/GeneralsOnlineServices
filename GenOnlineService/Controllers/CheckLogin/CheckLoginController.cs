@@ -18,6 +18,7 @@
 
 using Database;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MySqlX.XDevAPI.Common;
 using System;
 using System.Net;
@@ -48,11 +49,11 @@ namespace GenOnlineService.Controllers
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class CheckLoginController : ControllerBase
 	{
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 
-		public CheckLoginController(AppDbContext db)
+		public CheckLoginController(IDbContextFactory<AppDbContext> dbFactory)
 		{
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		[HttpPost]
@@ -104,6 +105,8 @@ namespace GenOnlineService.Controllers
 					{
 						if (data != null && data.ContainsKey("code") && data.ContainsKey("client_id"))
 						{
+							await using var db = await _dbFactory.CreateDbContextAsync();
+
 							//byte[] respNonce = new byte[32];
 							//using (RandomNumberGenerator rng = RandomNumberGenerator.Create()) { rng.GetBytes(respNonce); }
 
@@ -142,10 +145,10 @@ namespace GenOnlineService.Controllers
 
 
 								// make user
-								await Database.Users.CreateUserIfNotExists_DevAccount(_db, user_id, result.display_name);
+								await Database.Users.CreateUserIfNotExists_DevAccount(db, user_id, result.display_name);
 							}
 
-							bool bIsAdmin = await Database.Users.IsUserAdmin(_db, user_id);
+							bool bIsAdmin = await Database.Users.IsUserAdmin(db, user_id);
 #else
 
 							CMySQLResult sqlRes = await GlobalDatabaseInstance.g_Database.Query("SELECT state FROM pending_logins WHERE code=@game_code LIMIT 1;", new()
@@ -174,7 +177,7 @@ namespace GenOnlineService.Controllers
 								if (clientID != null && Program.g_tokenGenerator != null)
 								{
 									// ban check
-									bool bIsBanned = await Database.Users.IsUserBanned(_db, user_id);
+									bool bIsBanned = await Database.Users.IsUserBanned(db, user_id);
 									if (bIsBanned)
 									{
 										result.result = EPendingLoginState.LoginFailed;
@@ -194,7 +197,7 @@ namespace GenOnlineService.Controllers
 											string hwid_0 = data.ContainsKey("reserved_0") ? data["reserved_0"].ToString() : "NONE";
 											string hwid_1 = data.ContainsKey("reserved_1") ? data["reserved_1"].ToString() : "NONE";
 											string hwid_2 = data.ContainsKey("reserved_2") ? data["reserved_2"].ToString() : "NONE";
-											await Database.UserDevices.RegisterUserDevice(_db, user_id, hwid_0, hwid_1, hwid_2, ipAddr);
+											await Database.UserDevices.RegisterUserDevice(db, user_id, hwid_0, hwid_1, hwid_2, ipAddr);
 										}
 
 										string exe_crc = data.ContainsKey("exe_crc") ? data["exe_crc"].ToString() : "NONE";
@@ -223,7 +226,7 @@ namespace GenOnlineService.Controllers
 										result.ws_uri = null;
 									}
 
-									await Database.PendingLogins.CleanupPendingLogin(_db, gameCode);
+									await Database.PendingLogins.CleanupPendingLogin(db, gameCode);
 
 									return result;
 								}
@@ -238,7 +241,7 @@ namespace GenOnlineService.Controllers
 							{
 								result.result = EPendingLoginState.LoginFailed;
 								Response.StatusCode = (int)HttpStatusCode.Forbidden;
-								await Database.PendingLogins.CleanupPendingLogin(_db, gameCode);
+								await Database.PendingLogins.CleanupPendingLogin(db, gameCode);
 							}
 #if !DEBUG
 								}

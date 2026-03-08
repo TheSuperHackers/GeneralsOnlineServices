@@ -19,6 +19,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System;
 using System.Net;
@@ -64,14 +65,14 @@ namespace GenOnlineService.Controllers
 		private static readonly object s_roomsLock = new object();
 
 		private readonly LobbyManager _lobbyManager;
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 
 
-		public LobbiesController(LobbyManager lobbyManager, AppDbContext db, ILogger<LobbiesController> logger)
+		public LobbiesController(LobbyManager lobbyManager, IDbContextFactory<AppDbContext> dbFactory, ILogger<LobbiesController> logger)
 		{
 			_logger = logger;
 			_lobbyManager = lobbyManager;
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		// Cache rooms.json data to avoid disk I/O on every request
@@ -374,8 +375,10 @@ namespace GenOnlineService.Controllers
 								// cleanup any zombie lobbies
 								await _lobbyManager.CleanupUserLobbiesNotStarted(user_id);
 
-								string strDisplayName = await Database.Users.GetDisplayName(_db, user_id);
-								Int64 newLobbyID = await _lobbyManager.CreateLobby(_db, playerSession, strDisplayName, strName, strMapName, strMapPath, bMapOfficial, maxPlayers, strIPAddr,
+								await using var db = await _dbFactory.CreateDbContextAsync();
+								string strDisplayName = await Database.Users.GetDisplayName(db, user_id);
+
+								Int64 newLobbyID = await _lobbyManager.CreateLobby(db, playerSession, strDisplayName, strName, strMapName, strMapPath, bMapOfficial, maxPlayers, strIPAddr,
 									hostPreferredPort, bVanillaTeamsOnly, bTrackStats, starting_cash, bPassworded, strPassword, playerSession.networkRoomID, bAllowObservers, maxCamHeight, exe_crc, ini_crc, ELobbyType.CustomGame);
 
 								if (newLobbyID >= 0)

@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Concurrent;
@@ -143,13 +144,13 @@ namespace GenOnlineService.Controllers
 	{
 		private readonly ILogger<LobbiesController> _logger;
 		private readonly LobbyManager _lobbyManager;
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 
-		public LobbyController(LobbyManager lobbyManager, AppDbContext db, ILogger<LobbiesController> logger)
+		public LobbyController(LobbyManager lobbyManager, IDbContextFactory<AppDbContext> dbFactory, ILogger<LobbiesController> logger)
 		{
 			_logger = logger;
 			_lobbyManager = lobbyManager;
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		[HttpGet("{lobby_id}")]
@@ -442,7 +443,8 @@ namespace GenOnlineService.Controllers
 
 										if (strMap != null && strMapPath != null)
 										{
-											await lobby.UpdateMap(_db, strMap, strMapPath, bOfficialMap, maxPlayers);
+											await using var db = await _dbFactory.CreateDbContextAsync();
+											await lobby.UpdateMap(db, strMap, strMapPath, bOfficialMap, maxPlayers);
 										}
 									}
 								}
@@ -454,7 +456,9 @@ namespace GenOnlineService.Controllers
 									{
 										int side = data["side"].GetInt32();
 										int start_pos = data["start_pos"].GetInt32();
-										await SourceMember.UpdateSide(_db, side, start_pos);
+
+										await using var db = await _dbFactory.CreateDbContextAsync();
+										await SourceMember.UpdateSide(db, side, start_pos);
 									}
 								}
 								else if (field == ELobbyUpdateField.MY_COLOR)
@@ -462,7 +466,9 @@ namespace GenOnlineService.Controllers
 									if (data.ContainsKey("color"))
 									{
 										int color = data["color"].GetInt32();
-										await SourceMember.UpdateColor(_db, color);
+
+										await using var db = await _dbFactory.CreateDbContextAsync();
+										await SourceMember.UpdateColor(db, color);
 									}
 								}
 								else if (field == ELobbyUpdateField.MY_START_POS)
@@ -486,7 +492,9 @@ namespace GenOnlineService.Controllers
 									if (data.ContainsKey("startingcash"))
 									{
 										UInt32 startingCash = data["startingcash"].GetUInt32();
-										await lobby.UpdateStartingCash(_db, startingCash);
+
+										await using var db = await _dbFactory.CreateDbContextAsync();
+										await lobby.UpdateStartingCash(db, startingCash);
 									}
 								}
 								else if (field == ELobbyUpdateField.LOBBY_LIMIT_SUPERWEAPONS)
@@ -494,7 +502,9 @@ namespace GenOnlineService.Controllers
 									if (data.ContainsKey("limit_superweapons"))
 									{
 										bool bLimitSuperweapons = data["limit_superweapons"].GetBoolean();
-										await lobby.UpdateLimitSuperweapons(_db, bLimitSuperweapons);
+
+										await using var db = await _dbFactory.CreateDbContextAsync();
+										await lobby.UpdateLimitSuperweapons(db, bLimitSuperweapons);
 									}
 								}
 								else if (field == ELobbyUpdateField.HOST_ACTION_FORCE_START)
@@ -563,7 +573,8 @@ namespace GenOnlineService.Controllers
 										{
 											if (TargetMember.IsAI())
 											{
-												await TargetMember.UpdateSide(_db, side, start_pos);
+												await using var db = await _dbFactory.CreateDbContextAsync();
+												await TargetMember.UpdateSide(db, side, start_pos);
 											}
 										}
 									}
@@ -581,7 +592,8 @@ namespace GenOnlineService.Controllers
 										{
 											if (TargetMember.IsAI())
 											{
-												await TargetMember.UpdateColor(_db, color);
+												await using var db = await _dbFactory.CreateDbContextAsync();
+												await TargetMember.UpdateColor(db, color);
 											}
 										}
 									}
@@ -724,8 +736,9 @@ namespace GenOnlineService.Controllers
 									// leave any lobby
 									_lobbyManager.LeaveAnyLobby(user_id);
 
-									string strDisplayName = await Database.Users.GetDisplayName(_db, user_id);
-									bool bJoinedSuccessfully = await _lobbyManager.JoinLobby(_db, lobby, playerSession, strDisplayName, userPreferredPort, bHasMap);
+									await using var db = await _dbFactory.CreateDbContextAsync();
+									string strDisplayName = await Database.Users.GetDisplayName(db, user_id);
+									bool bJoinedSuccessfully = await _lobbyManager.JoinLobby(db, lobby, playerSession, strDisplayName, userPreferredPort, bHasMap);
 
 									result.success = bJoinedSuccessfully;
 

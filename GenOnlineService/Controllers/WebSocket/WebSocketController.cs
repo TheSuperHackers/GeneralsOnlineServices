@@ -20,6 +20,7 @@ using Discord;
 using MaxMind.GeoIP2;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Buffers;
 using System.Net.WebSockets;
@@ -32,12 +33,12 @@ namespace GenOnlineService.Controllers
 	public class WebSocketController : ControllerBase
 	{
 		private readonly LobbyManager _lobbyManager;
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 
-		public WebSocketController(LobbyManager lobbyManager, AppDbContext db)
+		public WebSocketController(LobbyManager lobbyManager, IDbContextFactory<AppDbContext> dbFactory)
 		{
 			_lobbyManager = lobbyManager;
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		private static readonly JsonSerializerOptions JsonOpts = new()
@@ -124,8 +125,9 @@ namespace GenOnlineService.Controllers
 				return;
 			}
 
+			await using var db = await _dbFactory.CreateDbContextAsync();
 			UserWebSocketInstance wsSess = await WebSocketManager.CreateSession(
-				_db,
+				db,
 				EUserSessionType.GameClient,
 				bIsReconnect,
 				user_id,
@@ -471,7 +473,8 @@ namespace GenOnlineService.Controllers
 
 						if (nameChangeRequest.name.Length >= 3 && nameChangeRequest.name.Length <= 16)
 						{
-							await Database.Users.SetDisplayName(_db, sourceUserSession.m_UserID, nameChangeRequest.name);
+							await using var db = await _dbFactory.CreateDbContextAsync();
+							await Database.Users.SetDisplayName(db, sourceUserSession.m_UserID, nameChangeRequest.name);
 							sourceUserData.m_strDisplayName = nameChangeRequest.name;
 							await WebSocketManager.MarkRoomMemberListAsDirty(sourceUserSession.networkRoomID);
 						}

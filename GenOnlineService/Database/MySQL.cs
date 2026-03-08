@@ -1364,7 +1364,7 @@ namespace Database
 
 				// TODO_EFCORE: Consider use of ExecuteDeleteAsync and options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 				// TODO_EFCORE: Move to AddPooledDbContextFactory instead and use private readonly IDbContextFactory<AppDbContext> _factory;
-				builder.Services.AddDbContext<AppDbContext>(options =>
+				builder.Services.AddPooledDbContextFactory<AppDbContext>(options =>
 				{
 					options.UseMySql(
 						csb.ConnectionString,

@@ -19,6 +19,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Org.BouncyCastle.Security;
 using System;
@@ -92,13 +93,13 @@ namespace GenOnlineService.Controllers
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class MonitoringController : ControllerBase
 	{
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 		private readonly ILogger<MonitoringController> _logger;
 
-		public MonitoringController(AppDbContext db, ILogger<MonitoringController> logger)
+		public MonitoringController(IDbContextFactory<AppDbContext> dbFactory, ILogger<MonitoringController> logger)
 		{
 			_logger = logger;
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		[Route("ActiveUsers")]
@@ -167,7 +168,8 @@ namespace GenOnlineService.Controllers
 				// db call
 				try
 				{
-					string strDontCare = await Database.Users.GetDisplayName(_db, 0);
+					await using var db = await _dbFactory.CreateDbContextAsync();
+					string strDontCare = await Database.Users.GetDisplayName(db, 0);
 					result.ok = true;
 				}
 				catch
@@ -194,8 +196,9 @@ namespace GenOnlineService.Controllers
 				try
 				{
 					using var scope = ServiceLocator.Services.CreateScope();
-					var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-					GenOnlineService.Controllers.LoginWithToken.LoginWithToken loginWithTokenController = new GenOnlineService.Controllers.LoginWithToken.LoginWithToken(db);
+					var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+
+					GenOnlineService.Controllers.LoginWithToken.LoginWithToken loginWithTokenController = new GenOnlineService.Controllers.LoginWithToken.LoginWithToken(factory);
 					GenOnlineService.Controllers.LoginWithToken.POST_LoginWithToken_Result internalResult = (GenOnlineService.Controllers.LoginWithToken.POST_LoginWithToken_Result)await loginWithTokenController.Post_InternalHandler("{\"challenge\": \"abc\", \"token\": \"iamatest\", \"client_id\": \"gen_online_60hz\"}", IPAddress.Loopback.ToString(), true);
 					return internalResult;
 				}
@@ -273,7 +276,7 @@ namespace GenOnlineService.Controllers
 			{
 				try
 				{
-					GenOnlineService.Controllers.CheckLoginController checkLoginController = new GenOnlineService.Controllers.CheckLoginController(_db);
+					GenOnlineService.Controllers.CheckLoginController checkLoginController = new GenOnlineService.Controllers.CheckLoginController(_dbFactory);
 					APIResult internalResult = await checkLoginController.Post_InternalHandler("{\"challenge\": \"abc\", \"nonce\": \"def\", \"code\": \"iamatest\", \"client_id\": \"gen_online_30hz\"}", IPAddress.Loopback.ToString(), true);
 					return internalResult;
 				}

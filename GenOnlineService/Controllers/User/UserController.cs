@@ -19,6 +19,7 @@
 using Amazon.S3.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Concurrent;
 using System.Net.WebSockets;
@@ -43,13 +44,13 @@ namespace GenOnlineService.Controllers
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class UsersController : ControllerBase
 	{
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 		private readonly ILogger<UsersController> _logger;
 
-		public UsersController(AppDbContext db, ILogger<UsersController> logger)
+		public UsersController(IDbContextFactory<AppDbContext> dbFactory, ILogger<UsersController> logger)
 		{
 			_logger = logger;
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		[Authorize(Roles = "GameClient,ChatClient,GameLauncher")]
@@ -62,7 +63,8 @@ namespace GenOnlineService.Controllers
 
 			if (user_id != -1)
 			{
-				string strDisplayName = await Database.Users.GetDisplayName(_db, user_id);
+				await using var db = await _dbFactory.CreateDbContextAsync();
+				string strDisplayName = await Database.Users.GetDisplayName(db, user_id);
 
 				result.display_name = strDisplayName;
 				result.user_id = user_id;

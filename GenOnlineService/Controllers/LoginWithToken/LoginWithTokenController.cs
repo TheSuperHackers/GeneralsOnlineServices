@@ -18,6 +18,7 @@
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using MySqlX.XDevAPI.Common;
 using System;
 using System.Net;
@@ -49,11 +50,11 @@ namespace GenOnlineService.Controllers.LoginWithToken
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class LoginWithToken : ControllerBase
 	{
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 
-		public LoginWithToken(AppDbContext db)
+		public LoginWithToken(IDbContextFactory<AppDbContext> dbFactory)
 		{
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		[HttpPost(Name = "PostLoginWithToken")]
@@ -114,17 +115,19 @@ namespace GenOnlineService.Controllers.LoginWithToken
 						Int64 user_id = TokenHelper.GetUserID(this);
 						EUserSessionType sessionType = TokenHelper.GetSessionType(this);
 
+						await using var db = await _dbFactory.CreateDbContextAsync();
+
 						// Game clients should register the user device
 						if (sessionType == EUserSessionType.GameClient)
 						{
 							string hwid_0 = data.ContainsKey("reserved_0") ? data["reserved_0"].ToString() : "NONE";
 							string hwid_1 = data.ContainsKey("reserved_1") ? data["reserved_1"].ToString() : "NONE";
 							string hwid_2 = data.ContainsKey("reserved_2") ? data["reserved_2"].ToString() : "NONE";
-							await Database.UserDevices.RegisterUserDevice(_db, user_id, hwid_0, hwid_1, hwid_2, ipAddr);
+							await Database.UserDevices.RegisterUserDevice(db, user_id, hwid_0, hwid_1, hwid_2, ipAddr);
 						}
 
 						// ban check
-						bool bIsBanned = await Database.Users.IsUserBanned(_db, user_id);
+						bool bIsBanned = await Database.Users.IsUserBanned(db, user_id);
 						if (bIsBanned)
 						{
 							result.result = EPendingLoginState.LoginFailed;
@@ -135,10 +138,10 @@ namespace GenOnlineService.Controllers.LoginWithToken
 						string exe_crc = data.ContainsKey("exe_crc") ? data["exe_crc"].ToString() : "NONE";
 						Helpers.RegisterInitialPlayerExeCRC(user_id, exe_crc);
 
-						string strDisplayName = await Database.Users.GetDisplayName(_db, user_id);
+						string strDisplayName = await Database.Users.GetDisplayName(db, user_id);
 						await Database.Functions.Auth.SetUsedLoggedIn(GlobalDatabaseInstance.g_Database, user_id, clientID, sessionType);
 
-						bool bIsAdmin = await Database.Users.IsUserAdmin(_db, user_id);
+						bool bIsAdmin = await Database.Users.IsUserAdmin(db, user_id);
 
 						result.result = EPendingLoginState.LoginSuccess;
 

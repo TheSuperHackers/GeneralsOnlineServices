@@ -20,6 +20,7 @@ using Amazon.S3.Model;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using System;
 using System.Net;
@@ -69,13 +70,13 @@ namespace GenOnlineService.Controllers
 	[Route("env/{environment}/contract/{contract_version}/[controller]")]
 	public class PlayerStatsController : ControllerBase
 	{
-		private readonly AppDbContext _db;
+		private readonly IDbContextFactory<AppDbContext> _dbFactory;
 		private readonly ILogger<PlayerStatsController> _logger;
 
-		public PlayerStatsController(AppDbContext db, ILogger<PlayerStatsController> logger)
+		public PlayerStatsController(IDbContextFactory<AppDbContext> dbFactory, ILogger<PlayerStatsController> logger)
 		{
 			_logger = logger;
-			_db = db;
+			_dbFactory = dbFactory;
 		}
 
 		[HttpGet("{userID}")]
@@ -97,7 +98,8 @@ namespace GenOnlineService.Controllers
 			// if user is offline, hit DB, could be a friends list inspection for example
 			if (userData == null)
 			{
-				PlayerStats playerStats = await Database.Functions.Auth.GetPlayerStats(_db, GlobalDatabaseInstance.g_Database, userID);
+				await using var db = await _dbFactory.CreateDbContextAsync();
+				PlayerStats playerStats = await Database.Functions.Auth.GetPlayerStats(db, GlobalDatabaseInstance.g_Database, userID);
 
 				if (playerStats == null)
 				{

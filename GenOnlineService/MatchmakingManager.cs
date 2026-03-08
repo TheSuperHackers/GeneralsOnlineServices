@@ -21,6 +21,7 @@ using GenOnlineService;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Org.BouncyCastle.Tls;
 using System;
@@ -758,7 +759,9 @@ static class MatchmakingManager
 							{
 								// create lb data if necessary
 								using var scope = ServiceLocator.Services.CreateScope();
-								var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+								var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+								await using var db = await factory.CreateDbContextAsync();
+
 								await Database.Leaderboards.CreateUserEntriesIfNotExists(db, memberSession.m_UserID);
 
 								if (dummyHostUser == null)
@@ -780,7 +783,9 @@ static class MatchmakingManager
 								DetermineMap(out string strMapName, out string strMapPath);
 
 								using var scope = ServiceLocator.Services.CreateScope();
-								var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+								var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+								await using var db = await factory.CreateDbContextAsync();
+
 								m_LobbyID = await lobbyManager.CreateLobby(db, dummyHostUser, dummyHostUserData.m_strDisplayName, "Quickmatch Lobby", strMapName, strMapPath + ".map",
 										true, playlist.DesiredPlayers, "", 12345, false, true, 10000, false, String.Empty, -5, false, Constants.g_DefaultCameraMaxHeight, 123, 456, ELobbyType.QuickMatch);
 
