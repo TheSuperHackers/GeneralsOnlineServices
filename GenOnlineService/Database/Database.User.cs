@@ -64,7 +64,7 @@ public class User
 	public string DisplayName { get; set; } = "";
 	public DateTime LastLogin { get; set; } = DateTime.UnixEpoch;
 	public string LastIPAddress { get; set; } = String.Empty;
-	public int ClientID { get; set; } = -1;
+	public KnownClients.EKnownClients ClientID { get; set; } = KnownClients.EKnownClients.custom_third_party_client;
 
 	// Gameplay Favorites
 	public int FavoriteColor { get; set; } = -1;
@@ -399,14 +399,22 @@ namespace Database
 
 			if (!exists)
 			{
-				db.Users.Add(new User
+				// needs try catch because debug client spams this
+				try
 				{
-					ID = userId,
-					AccountType = EAccountType.DevAccount,
-					DisplayName = displayName
-				});
+					db.Users.Add(new User
+					{
+						ID = userId,
+						AccountType = EAccountType.DevAccount,
+						DisplayName = displayName
+					});
 
-				await db.SaveChangesAsync();
+					await db.SaveChangesAsync();
+				}
+				catch
+				{
+
+				}
 			}
 		}
 

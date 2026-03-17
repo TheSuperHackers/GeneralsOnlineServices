@@ -145,7 +145,7 @@ namespace GenOnlineService.Controllers
 
 
 								// make user
-								await Database.Users.CreateUserIfNotExists_DevAccount(db, user_id, result.display_name);
+								await Database.Users.CreateUserIfNotExists_DevAccount(db, user_id, strDisplayName);
 							}
 
 							bool bIsAdmin = await Database.Users.IsUserAdmin(db, user_id);
