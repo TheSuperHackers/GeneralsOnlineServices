@@ -1,4 +1,4 @@
-﻿/*
+/*
 **    GeneralsOnline Game Services - Backend Services for Command & Conquer Generals Online: Zero Hour
 **    Copyright (C) 2025  GeneralsOnline Development Team
 **
@@ -50,26 +50,26 @@ public class User
 	public EAccountType AccountType { get; set; } = EAccountType.Unknown;
 
 	// Steam, only present if AccountType is Steam
-	public Int64 SteamID { get; set; } = -1;
+	public Int64? SteamID { get; set; } = -1;
 
 	// Discord, only present if AccountType is Discord
-	public Int64 DiscordID { get; set; } = -1;
-	public string DiscordUsername { get; set; } = String.Empty;
+	public Int64? DiscordID { get; set; } = -1;
+	public string? DiscordUsername { get; set; } = String.Empty;
 
 	// GameReplays, only present if AccountType is GameReplays
-	public Int64 GameReplaysID { get; set; } = -1;
-	public string GameReplaysUsername { get; set; } = String.Empty;
+	public Int64? GameReplaysID { get; set; } = -1;
+	public string? GameReplaysUsername { get; set; } = String.Empty;
 
 
-	public string DisplayName { get; set; } = "";
+	public string? DisplayName { get; set; } = "";
 	public DateTime LastLogin { get; set; } = DateTime.UnixEpoch;
-	public string LastIPAddress { get; set; } = String.Empty;
+	public string? LastIPAddress { get; set; } = String.Empty;
 	public KnownClients.EKnownClients ClientID { get; set; } = KnownClients.EKnownClients.custom_third_party_client;
 
 	// Gameplay Favorites
 	public int FavoriteColor { get; set; } = -1;
 	public int FavoriteSide { get; set; } = -1;
-	public string FavoriteMap { get; set; } = String.Empty;
+	public string? FavoriteMap { get; set; } = String.Empty;
 	public int FavoriteStartingMoney { get; set; } = -1;
 	public bool LimitSuperweapons { get; set; } = false;
 
@@ -82,10 +82,10 @@ public class User
 	public int EloNumberOfMatches { get; set; } = 0;
 
 	// Bans
-	public string BanReason { get; set; } = String.Empty;
-	public string BannedBy { get; set; } = String.Empty;
-	public string BanVerifiedBy { get; set; } = String.Empty;
-	public string BanAliases { get; set; } = String.Empty;
+	public string? BanReason { get; set; } = String.Empty;
+	public string? BannedBy { get; set; } = String.Empty;
+	public string? BanVerifiedBy { get; set; } = String.Empty;
+	public string? BanAliases { get; set; } = String.Empty;
 }
 
 public class UserLobbyPreferences
@@ -384,7 +384,7 @@ namespace Database
 				  {
 					  favorite_color = u.FavoriteColor,
 					  favorite_side = u.FavoriteSide,
-					  favorite_map = u.FavoriteMap,
+					  favorite_map = u.FavoriteMap ?? String.Empty,
 					  favorite_starting_money = u.FavoriteStartingMoney,
 					  favorite_limit_superweapons = u.LimitSuperweapons
 				  })

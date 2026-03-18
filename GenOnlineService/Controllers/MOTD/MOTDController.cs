@@ -66,7 +66,7 @@ namespace GenOnlineService.Controllers
 				if (System.IO.File.Exists(Path.Combine("data", "motd.txt")))
 				{
 					string strFileData = await System.IO.File.ReadAllTextAsync(Path.Combine("data", "motd.txt"));
-					int numPlayers = GenOnlineService.WebSocketManager.GetUserDataCache().Count;
+					int numPlayers = GenOnlineService.WebSocketManager.GetNumberOfUsersOnline();
 
 					result.MOTD = String.Format(strFileData, numPlayers);
 				}

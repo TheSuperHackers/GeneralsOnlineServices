@@ -429,6 +429,12 @@ namespace GenOnlineService
 
 					options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 
+#if RELEASE
+					options.UseLoggerFactory(LoggerFactory.Create(builder => { })); // Empty logger
+					options.EnableSensitiveDataLogging(false); // Ensure sensitive data is not logged
+					options.EnableDetailedErrors(false);      // Disable detailed error messages
+#endif
+
 				});
 			}
 		}
@@ -1033,7 +1039,7 @@ namespace GenOnlineService
 					var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
 
 					int numLobbies = lobbyManager.GetNumLobbies();
-					await StatsTracker.Update(numLobbies, WebSocketManager.GetUserDataCache().Count);
+					await StatsTracker.Update(numLobbies, WebSocketManager.GetNumberOfUsersOnline());
 
 					await lobbyManager.Cleanup();
 				}

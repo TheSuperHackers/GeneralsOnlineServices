@@ -18,6 +18,7 @@
 
 using Amazon.S3.Model;
 using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.EntityFrameworkCore;
 using Org.BouncyCastle.Tls;
 using System;
 using System.Collections.Concurrent;
@@ -276,13 +277,15 @@ namespace GenOnlineService
 			// update last login and last ip
 			await Database.Users.UpdateLastLoginData(_db, ownerID, ipAddr);
 
-            int numSessions = m_dictWebsockets.Count;
+			// TODO_EFCORE: Optimize this, dont iterate all the time
+			int numSessions = WebSocketManager.GetNumberOfUsersOnline();
+
 			if (numSessions > g_PeakConnectionCount)
 			{
 				g_PeakConnectionCount = numSessions;
 			}
 
-			Console.Title = String.Format("GenOnline - {0} players", m_dictWebsockets.Count);
+			Console.Title = String.Format("GenOnline - {0} players", numSessions);
 
 			SharedUserData? sharedUserData = WebSocketManager.GetSharedDataForUser(ownerID);
 
@@ -322,6 +325,17 @@ namespace GenOnlineService
 			// messages stay in the queue for the next tick.
 			using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(20));
 			await Task.WhenAll(m_dictUserSessions.Values.SelectMany(inner => inner.Values).Select(sess => sess.TickWebsocket(cts.Token)));
+		}
+
+		public static int GetNumberOfUsersOnline()
+		{
+			int numSessions = 0;
+			foreach (var kvPair in m_dictUserSessions)
+			{
+				numSessions += kvPair.Value.Count;
+			}
+
+			return numSessions;
 		}
 
 		public static async Task CheckForTimeouts()
@@ -442,7 +456,8 @@ namespace GenOnlineService
 				}
 			}
 
-			Console.Title = String.Format("GenOnline - {0} players", m_dictWebsockets.Count);
+			int numSessions = WebSocketManager.GetNumberOfUsersOnline(); ;
+			Console.Title = String.Format("GenOnline - {0} players", numSessions);
 
 			try
 			{
