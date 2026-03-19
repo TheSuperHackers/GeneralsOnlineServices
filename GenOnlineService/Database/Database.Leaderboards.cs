@@ -164,35 +164,6 @@ namespace Database
 			public int Matches { get; set; }
 		}
 
-		public class LeaderboardDaily
-		{
-			public long UserId { get; set; }
-			public int? Points { get; set; }
-			public int DayOfYear { get; set; }
-			public int Year { get; set; }
-			public int? Wins { get; set; }
-			public int? Losses { get; set; }
-		}
-
-		public class LeaderboardMonthly
-		{
-			public long UserId { get; set; }
-			public int? Points { get; set; }
-			public int MonthOfYear { get; set; }
-			public int Year { get; set; }
-			public int? Wins { get; set; }
-			public int? Losses { get; set; }
-		}
-
-		public class LeaderboardYearly
-		{
-			public long UserId { get; set; }
-			public int? Points { get; set; }
-			public int Year { get; set; }
-			public int? Wins { get; set; }
-			public int? Losses { get; set; }
-		}
-
 		public static class LeaderboardQueries
 		{
 			public static readonly Func<AppDbContext, List<long>, int, int, IAsyncEnumerable<LeaderboardRow>> DailyBulk =
