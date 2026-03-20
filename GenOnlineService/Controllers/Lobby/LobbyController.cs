@@ -121,7 +121,8 @@ namespace GenOnlineService.Controllers
 		AI_TEAM = 15,
 		AI_START_POS = 16,
 		MAX_CAMERA_HEIGHT = 17,
-        JOINABILITY = 18
+        JOINABILITY = 18,
+		HOST_ACTION_BULK_SLOT_UPDATE = 19
     };
 
 	public class RouteHandler_PUT_Lobby_Result : APIResult
@@ -359,7 +360,8 @@ namespace GenOnlineService.Controllers
 			[ELobbyUpdateField.AI_TEAM] = ELobbyUpdatePermissions.LobbyOwner,
 			[ELobbyUpdateField.AI_START_POS] = ELobbyUpdatePermissions.LobbyOwner,
 			[ELobbyUpdateField.MAX_CAMERA_HEIGHT] = ELobbyUpdatePermissions.LobbyOwner,
-			[ELobbyUpdateField.JOINABILITY] = ELobbyUpdatePermissions.LobbyOwner
+			[ELobbyUpdateField.JOINABILITY] = ELobbyUpdatePermissions.LobbyOwner,
+			[ELobbyUpdateField.HOST_ACTION_BULK_SLOT_UPDATE] = ELobbyUpdatePermissions.LobbyOwner
 		};
 
 
@@ -647,6 +649,47 @@ namespace GenOnlineService.Controllers
 								{
 									ELobbyJoinability newLobbyJoinability = (ELobbyJoinability)data["joinability"].GetInt32();
 									lobby.UpdateJoinability(newLobbyJoinability);
+								}
+								else if (field == ELobbyUpdateField.HOST_ACTION_BULK_SLOT_UPDATE)
+								{
+									if (data.ContainsKey("slots"))
+									{
+										await using var db = await _dbFactory.CreateDbContextAsync();
+										foreach (JsonElement slotEntry in data["slots"].EnumerateArray())
+										{
+											try
+											{
+												if (!slotEntry.TryGetProperty("slot_index", out var slotIndexProp) ||
+													!slotEntry.TryGetProperty("side", out var sideProp) ||
+													!slotEntry.TryGetProperty("color", out var colorProp) ||
+													!slotEntry.TryGetProperty("start_pos", out var startPosProp) ||
+													!slotEntry.TryGetProperty("team", out var teamProp))
+												{
+													continue;
+												}
+
+												int slotIndex = slotIndexProp.GetInt32();
+												int side = sideProp.GetInt32();
+												int color = colorProp.GetInt32();
+												int start_pos = startPosProp.GetInt32();
+												int team = teamProp.GetInt32();
+
+												LobbyMember? TargetMember = lobby.GetMemberFromSlot(slotIndex);
+												if (TargetMember != null)
+												{
+													await TargetMember.UpdateSide(db, side, start_pos);
+													await TargetMember.UpdateColor(db, color);
+													TargetMember.UpdateStartPos(start_pos);
+													TargetMember.UpdateTeam(team);
+												}
+											}
+											catch
+											{
+												continue;
+											}
+										}
+										lobby.DirtyRetransmit();
+									}
 								}
                             }
                         }
