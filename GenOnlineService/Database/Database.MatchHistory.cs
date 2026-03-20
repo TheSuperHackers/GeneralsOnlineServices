@@ -168,6 +168,20 @@ namespace GenOnlineService
 		public EMetadataFileType file_type { get; set; }
 	}
 
+	// Handles JSON booleans stored as integers (0/1) from legacy MySQL tinyint serialization.
+	public sealed class BoolFromIntConverter : JsonConverter<bool>
+	{
+		public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			if (reader.TokenType == JsonTokenType.Number)
+				return reader.GetInt32() != 0;
+			return reader.GetBoolean();
+		}
+
+		public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options)
+			=> writer.WriteBooleanValue(value);
+	}
+
 	public struct MatchdataMemberModel
 	{
 		public Int64 user_id { get; set; } = -1;            // bigint(20) NOT NULL
@@ -185,6 +199,7 @@ namespace GenOnlineService
 		public int units_lost { get; set; } = 0;           // int(11) DEFAULT NULL
 		public int total_money { get; set; } = 0;          // int(11) DEFAULT NULL
 
+		[JsonConverter(typeof(BoolFromIntConverter))]
 		public bool won { get; set; } = false;                // tinyint(4) DEFAULT NULL
 		public List<MemberMetadataModel> metadata { get; set; } = new List<MemberMetadataModel>();
 
@@ -234,23 +249,18 @@ namespace Database
 		private static Expression<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>
 	BuildSetter(int slotIndex, string? json)
 		{
-			var param = Expression.Parameter(typeof(SetPropertyCalls<MatchHistoryEntry>), "s");
-
-			var call = Expression.Call(
-				param,
-				nameof(SetPropertyCalls<MatchHistoryEntry>.SetProperty),
-				typeArguments: null,
-				arguments: new Expression[]
-				{
-			_slotSelectors[slotIndex],
-			Expression.Constant(json, typeof(string))
-				}
-			);
-
-			return Expression.Lambda<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>(
-				call,
-				param
-			);
+			return slotIndex switch
+			{
+				0 => s => s.SetProperty(m => m.MemberSlot0, json),
+				1 => s => s.SetProperty(m => m.MemberSlot1, json),
+				2 => s => s.SetProperty(m => m.MemberSlot2, json),
+				3 => s => s.SetProperty(m => m.MemberSlot3, json),
+				4 => s => s.SetProperty(m => m.MemberSlot4, json),
+				5 => s => s.SetProperty(m => m.MemberSlot5, json),
+				6 => s => s.SetProperty(m => m.MemberSlot6, json),
+				7 => s => s.SetProperty(m => m.MemberSlot7, json),
+				_ => throw new ArgumentOutOfRangeException(nameof(slotIndex))
+			};
 		}
 
 
@@ -270,34 +280,31 @@ namespace Database
 		private static Expression<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>
 	BuildWinnerSetter(int slotIndex, string updatedJson)
 		{
-			var param = Expression.Parameter(typeof(SetPropertyCalls<MatchHistoryEntry>), "s");
-
-			var call = Expression.Call(
-				param,
-				nameof(SetPropertyCalls<MatchHistoryEntry>.SetProperty),
-				typeArguments: null,
-				arguments: new Expression[]
-				{
-			_slotSelectors[slotIndex],
-			Expression.Constant(updatedJson, typeof(string))
-				}
-			);
-
-			return Expression.Lambda<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>(
-				call,
-				param
-			);
+			return slotIndex switch
+			{
+				0 => s => s.SetProperty(m => m.MemberSlot0, updatedJson),
+				1 => s => s.SetProperty(m => m.MemberSlot1, updatedJson),
+				2 => s => s.SetProperty(m => m.MemberSlot2, updatedJson),
+				3 => s => s.SetProperty(m => m.MemberSlot3, updatedJson),
+				4 => s => s.SetProperty(m => m.MemberSlot4, updatedJson),
+				5 => s => s.SetProperty(m => m.MemberSlot5, updatedJson),
+				6 => s => s.SetProperty(m => m.MemberSlot6, updatedJson),
+				7 => s => s.SetProperty(m => m.MemberSlot7, updatedJson),
+				_ => throw new ArgumentOutOfRangeException(nameof(slotIndex))
+			};
 		}
 
 
-		private static readonly Func<AppDbContext, long, int, Task<string?>> _getMemberSlot =
-	EF.CompileAsyncQuery(
-		(AppDbContext db, long matchId, int slotIndex) =>
-			db.MatchHistory
-			  .Where(m => m.MatchId == matchId)
-			  .Select(_slotSelectors[slotIndex])
-			  .FirstOrDefault()
-	);
+		private static async Task<string?> _getMemberSlot(AppDbContext db, long matchId, int slotIndex)
+		{
+			if (slotIndex < 0 || slotIndex > 7)
+				return null;
+
+			return await db.MatchHistory
+				.Where(m => m.MatchId == matchId)
+				.Select(_slotSelectors[slotIndex])
+				.FirstOrDefaultAsync();
+		}
 
 
 
@@ -308,41 +315,7 @@ namespace Database
 					  .Max(m => (long?)m.MatchId)
 			);
 
-		private static readonly Func<AppDbContext, MatchHistoryEntry, Task> _insertMatch =
-			EF.CompileAsyncQuery(
-				(AppDbContext db, MatchHistoryEntry m) =>
-				db.MatchHistory.Add(m)
-		);
 
-
-
-
-		private static readonly Func<AppDbContext, long, long, IAsyncEnumerable<MatchHistory_Entry>> _getMatchesInRange =
-	EF.CompileAsyncQuery(
-		(AppDbContext db, long startId, long endId) =>
-			db.MatchHistory
-			  .Where(m => m.MatchId >= startId &&
-						  m.MatchId <= endId &&
-						  m.Finished)
-			  .Select(m => new MatchHistory_Entry(
-				  m.MatchId,
-				  m.Owner,
-				  m.Name,
-				  m.Finished,
-				  m.Started.ToString("O"),
-				  m.TimeFinished.ToString("O"),
-				  m.MapName,
-				  m.MapPath!,
-				  m.MatchRosterType,
-				  m.MapOfficial,
-				  m.VanillaTeams,
-				  m.StartingCash,
-				  m.LimitSuperweapons,
-				  m.TrackStats,
-				  m.AllowObservers,
-				  m.MaxCamHeight
-			  ))
-	);
 
 		public static async Task CommitPlayerOutcome(
 	AppDbContext db,
@@ -360,32 +333,40 @@ namespace Database
 			if (slotIndex < 0 || slotIndex > 7)
 				return;
 
-			// 1. Load JSON for this slot
-			string? json = await _getMemberSlot(db, (long)matchId, slotIndex);
-			if (string.IsNullOrEmpty(json))
-				return;
+			try
+			{
+				// 1. Load JSON for this slot
+				string? json = await _getMemberSlot(db, (long)matchId, slotIndex);
+				if (string.IsNullOrEmpty(json))
+					return;
 
-			// 2. Deserialize
-			MatchdataMemberModel? modelNullable = JsonSerializer.Deserialize<MatchdataMemberModel?>(json);
-			if (modelNullable == null)
-				return;
+				// 2. Deserialize
+				MatchdataMemberModel? modelNullable = JsonSerializer.Deserialize<MatchdataMemberModel?>(json);
+				if (modelNullable == null)
+					return;
 
-			// 3. Update fields
-			MatchdataMemberModel model = modelNullable.Value;
-			model.buildings_built = buildingsBuilt;
-			model.buildings_killed = buildingsKilled;
-			model.buildings_lost = buildingsLost;
-			model.units_built = unitsBuilt;
-			model.units_killed = unitsKilled;
-			model.units_lost = unitsLost;
-			model.total_money = totalMoney;
-			model.won = won;
+				// 3. Update fields
+				MatchdataMemberModel model = modelNullable.Value;
+				model.buildings_built = buildingsBuilt;
+				model.buildings_killed = buildingsKilled;
+				model.buildings_lost = buildingsLost;
+				model.units_built = unitsBuilt;
+				model.units_killed = unitsKilled;
+				model.units_lost = unitsLost;
+				model.total_money = totalMoney;
+				model.won = won;
 
-			// 4. Serialize back
-			string updatedJson = JsonSerializer.Serialize(model);
+				// 4. Serialize back
+				string updatedJson = JsonSerializer.Serialize(model);
 
-			// 5. Update DB (single SQL UPDATE)
-			await _updateMemberSlot(db, (long)matchId, slotIndex, updatedJson);
+				// 5. Update DB (single SQL UPDATE)
+				await _updateMemberSlot(db, (long)matchId, slotIndex, updatedJson);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] CommitPlayerOutcome failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		public static async Task _updateMemberSlot(
@@ -399,29 +380,32 @@ namespace Database
 		}
 
 
-		private static string ComputeRosterType(int playersSeen, Dictionary<int, int> playersPerTeam)
+		private static string ComputeRosterType(Dictionary<int, int> playersPerTeam)
 		{
-			// FFA check
-			bool isFFA = playersSeen > 2 &&
-						 playersPerTeam.All(kv => kv.Key == -1 || kv.Value == 1);
+			int noTeamCount = playersPerTeam.TryGetValue(-1, out int n) ? n : 0;
 
-			if (isFFA)
-				return $"{playersSeen} Player FFA";
+			var teamedGroups = playersPerTeam
+				.Where(kv => kv.Key != -1)
+				.Select(kv => kv.Value)
+				.OrderBy(c => c)
+				.ToList();
 
-			// Team roster type
-			string roster = "";
+			int activePlayers = noTeamCount + teamedGroups.Sum();
 
-			foreach (var kv in playersPerTeam)
+			if (activePlayers == 0)
 			{
-				int count = kv.Value;
-
-				if (string.IsNullOrEmpty(roster))
-					roster = count.ToString();
-				else
-					roster += $"v{count}";
+				return "Unknown";
 			}
 
-			return roster;
+			bool isFFA = activePlayers > 2 &&
+						 (noTeamCount == activePlayers || teamedGroups.All(c => c == 1));
+
+			if (isFFA)
+			{
+				return $"{activePlayers} Player FFA";
+			}
+
+			return string.Join("v", teamedGroups);
 		}
 
 
@@ -432,86 +416,100 @@ namespace Database
 			if (lobby == null)
 				return 0;
 
-			// Build member JSON array
-			string?[] jsonSlots = new string?[8];
-
-			Dictionary<int, int> playersPerTeam = new();
-			int playersSeen = 0;
-
-			foreach (var member in lobby.Members)
+			try
 			{
-				if (member.SlotState == EPlayerType.SLOT_OPEN ||
-					member.SlotState == EPlayerType.SLOT_CLOSED)
-					continue;
+				// Build member JSON array
+				string?[] jsonSlots = new string?[8];
 
-				var model = new MatchdataMemberModel
+				Dictionary<int, int> playersPerTeam = new();
+
+				foreach (var member in lobby.Members)
 				{
-					user_id = member.UserID,
-					display_name = member.DisplayName,
-					slot_state = member.SlotState,
-					side = member.Side,
-					color = member.Color,
-					team = member.Team,
-					startpos = member.StartingPosition,
-					buildings_built = 0,
-					buildings_killed = 0,
-					buildings_lost = 0,
-					units_built = 0,
-					units_killed = 0,
-					units_lost = 0,
-					total_money = 0,
-					won = false
+					if (member.SlotState == EPlayerType.SLOT_OPEN ||
+						member.SlotState == EPlayerType.SLOT_CLOSED)
+						continue;
+
+					var model = new MatchdataMemberModel
+					{
+						user_id = member.UserID,
+						display_name = member.DisplayName,
+						slot_state = member.SlotState,
+						side = member.Side,
+						color = member.Color,
+						team = member.Team,
+						startpos = member.StartingPosition,
+						buildings_built = 0,
+						buildings_killed = 0,
+						buildings_lost = 0,
+						units_built = 0,
+						units_killed = 0,
+						units_lost = 0,
+						total_money = 0,
+						won = false
+					};
+
+					jsonSlots[member.SlotIndex] = JsonSerializer.Serialize(model);
+
+					// Observers (side == -2) are not active players
+					if (model.side != -2)
+					{
+						if (playersPerTeam.ContainsKey(model.team))
+						{
+							playersPerTeam[model.team]++;
+						}
+						else
+						{
+							playersPerTeam[model.team] = 1;
+						}
+					}
+				}
+
+				// Determine roster type
+				string rosterType = ComputeRosterType(playersPerTeam);
+
+				// Build EF entity
+				var entity = new MatchHistoryEntry
+				{
+					Owner = lobby.Owner,
+					Name = lobby.Name,
+					MapName = lobby.MapName,
+					MapPath = lobby.MapPath,
+					MapOfficial = lobby.IsMapOfficial,
+					MatchRosterType = rosterType,
+					VanillaTeams = lobby.IsVanillaTeamsOnly,
+					StartingCash = lobby.StartingCash,
+					LimitSuperweapons = lobby.IsLimitSuperweapons,
+					TrackStats = lobby.IsTrackingStats,
+					AllowObservers = lobby.AllowObservers,
+					MaxCamHeight = lobby.MaximumCameraHeight,
+
+					MemberSlot0 = jsonSlots[0],
+					MemberSlot1 = jsonSlots[1],
+					MemberSlot2 = jsonSlots[2],
+					MemberSlot3 = jsonSlots[3],
+					MemberSlot4 = jsonSlots[4],
+					MemberSlot5 = jsonSlots[5],
+					MemberSlot6 = jsonSlots[6],
+					MemberSlot7 = jsonSlots[7]
 				};
 
-				jsonSlots[member.SlotIndex] = JsonSerializer.Serialize(model);
+				// Add entity to DbSet
+				db.MatchHistory.Add(entity);
 
-				playersSeen++;
+				// Save
+				await db.SaveChangesAsync();
 
-				if (playersPerTeam.ContainsKey(model.team))
-					playersPerTeam[model.team]++;
-				else
-					playersPerTeam[model.team] = 1;
+				ulong id = (ulong)entity.MatchId;
+				lobby.SetMatchID(id);
+
+				return id;
 			}
-
-			// Determine roster type
-			string rosterType = ComputeRosterType(playersSeen, playersPerTeam);
-
-			// Build EF entity
-			var entity = new MatchHistoryEntry
+			catch (Exception ex)
 			{
-				Owner = lobby.Owner,
-				Name = lobby.Name,
-				MapName = lobby.MapName,
-				MapPath = lobby.MapPath,
-				MapOfficial = lobby.IsMapOfficial,
-				MatchRosterType = rosterType,
-				VanillaTeams = lobby.IsVanillaTeamsOnly,
-				StartingCash = lobby.StartingCash,
-				LimitSuperweapons = lobby.IsLimitSuperweapons,
-				TrackStats = lobby.IsTrackingStats,
-				AllowObservers = lobby.AllowObservers,
-				MaxCamHeight = lobby.MaximumCameraHeight,
-
-				MemberSlot0 = jsonSlots[0],
-				MemberSlot1 = jsonSlots[1],
-				MemberSlot2 = jsonSlots[2],
-				MemberSlot3 = jsonSlots[3],
-				MemberSlot4 = jsonSlots[4],
-				MemberSlot5 = jsonSlots[5],
-				MemberSlot6 = jsonSlots[6],
-				MemberSlot7 = jsonSlots[7]
-			};
-
-			// Precompiled Add()
-			await _insertMatch(db, entity);
-
-			// Save
-			await db.SaveChangesAsync();
-
-			ulong id = (ulong)entity.MatchId;
-			lobby.SetMatchID(id);
-
-			return id;
+				Console.WriteLine($"[ERROR] CreatePlaceholderMatchHistory failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+				return 0;
+			}
 		}
 
 		public static async Task DetermineLobbyWinnerIfNotPresent(
@@ -521,88 +519,99 @@ namespace Database
 			if (lobby == null || lobby.MatchID == 0)
 				return;
 
-			// 1. Load all JSON slots
-			string?[]? slots = await _getAllMemberSlots(db, (long)lobby.MatchID);
-			if (slots == null)
-				return;
-
-			// 2. Deserialize only non-null slots
-			Dictionary<int, MatchdataMemberModel> members = new();
-
-			for (int i = 0; i < 8; i++)
+			try
 			{
-				if (!string.IsNullOrEmpty(slots[i]))
+				// 1. Load all JSON slots
+				string?[]? slots = await _getAllMemberSlots(db, (long)lobby.MatchID);
+				if (slots == null)
+					return;
+
+				// 2. Deserialize only non-null slots
+				Dictionary<int, MatchdataMemberModel> members = new();
+
+				for (int i = 0; i < 8; i++)
 				{
-					MatchdataMemberModel? model = JsonSerializer.Deserialize<MatchdataMemberModel>(slots[i]!);
-					if (model != null)
-						members[i] = model.Value;
+					if (!string.IsNullOrEmpty(slots[i]))
+					{
+						MatchdataMemberModel? model = JsonSerializer.Deserialize<MatchdataMemberModel>(slots[i]!);
+						if (model != null)
+							members[i] = model.Value;
+					}
 				}
-			}
 
-			// 3. Check if a winner already exists
-			bool hasWinner = false;
-			int winnerTeam = -1;
+				// 3. Check if a winner already exists
+				bool hasWinner = false;
+				int winnerTeam = -1;
 
-			foreach (var kv in members)
-			{
-				if (kv.Value.won)
-				{
-					hasWinner = true;
-					winnerTeam = kv.Value.team;
-					break;
-				}
-			}
-
-			// 4. If winner exists, propagate to teammates
-			if (hasWinner && winnerTeam != -1)
-			{
 				foreach (var kv in members)
 				{
-					if (kv.Value.team == winnerTeam)
+					if (kv.Value.won)
+					{
+						hasWinner = true;
+						winnerTeam = kv.Value.team;
+						break;
+					}
+				}
+
+				// 4. If winner exists, propagate to teammates and return
+				if (hasWinner)
+				{
+					if (winnerTeam != -1)
+					{
+						foreach (var kv in members)
+						{
+							if (kv.Value.team == winnerTeam)
+							{
+								await UpdateMatchHistoryMakeWinner(db, lobby.MatchID, kv.Key);
+							}
+						}
+					}
+
+					return;
+				}
+
+				// 5. No winner — pick last player to leave
+				DateTime latestLeave = DateTime.UnixEpoch;
+				MatchdataMemberModel? lastPlayerNullable = null;
+				int lastSlot = -1;
+
+				foreach (var kv in members)
+				{
+					var model = kv.Value;
+
+					if (lobby.TimeMemberLeft.TryGetValue(model.user_id, out DateTime leftAt))
+					{
+						if (leftAt >= latestLeave)
+						{
+							latestLeave = leftAt;
+							lastPlayerNullable = model;
+							lastSlot = kv.Key;
+						}
+					}
+				}
+
+				if (lastPlayerNullable == null)
+					return;
+
+				MatchdataMemberModel lastPlayer = lastPlayerNullable.Value;
+				int winningTeam = lastPlayer.team;
+
+				// 6. Mark last player + teammates as winners
+				foreach (var kv in members)
+				{
+					var model = kv.Value;
+
+					if (model.user_id == lastPlayer.user_id ||
+						(winningTeam != -1 && model.team == winningTeam))
 					{
 						await UpdateMatchHistoryMakeWinner(db, lobby.MatchID, kv.Key);
 					}
 				}
-
-				return;
 			}
-
-			// 5. No winner � pick last player to leave
-			DateTime latestLeave = DateTime.UnixEpoch;
-			MatchdataMemberModel? lastPlayerNullable = null;
-			int lastSlot = -1;
-
-			foreach (var kv in members)
+			catch (Exception ex)
 			{
-				var model = kv.Value;
-
-				if (lobby.TimeMemberLeft.TryGetValue(model.user_id, out DateTime leftAt))
-				{
-					if (leftAt >= latestLeave)
-					{
-						latestLeave = leftAt;
-						lastPlayerNullable = model;
-						lastSlot = kv.Key;
-					}
-				}
-			}
-
-			if (lastPlayerNullable == null)
-				return;
-
-			MatchdataMemberModel lastPlayer = lastPlayerNullable.Value;
-			int winningTeam = lastPlayer.team;
-
-			// 6. Mark last player + teammates as winners
-			foreach (var kv in members)
-			{
-				var model = kv.Value;
-
-				if (model.user_id == lastPlayer.user_id ||
-					(winningTeam != -1 && model.team == winningTeam))
-				{
-					await UpdateMatchHistoryMakeWinner(db, lobby.MatchID, kv.Key);
-				}
+				Console.WriteLine($"[ERROR] DetermineLobbyWinnerIfNotPresent failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
 			}
 		}
 
@@ -614,30 +623,38 @@ namespace Database
 			if (matchId == 0 || slotIndex < 0 || slotIndex > 7)
 				return;
 
-			// 1. Load the JSON for this slot
-			string? json = await _getMemberSlot(db, (long)matchId, slotIndex);
-			if (string.IsNullOrEmpty(json))
-				return;
+			try
+			{
+				// 1. Load the JSON for this slot
+				string? json = await _getMemberSlot(db, (long)matchId, slotIndex);
+				if (string.IsNullOrEmpty(json))
+					return;
 
-			// 2. Deserialize
-			MatchdataMemberModel? modelNullable = JsonSerializer.Deserialize<MatchdataMemberModel>(json);
-			if (modelNullable == null)
-				return;
+				// 2. Deserialize
+				MatchdataMemberModel? modelNullable = JsonSerializer.Deserialize<MatchdataMemberModel>(json);
+				if (modelNullable == null)
+					return;
 
-			// 3. Update winner flag
-			MatchdataMemberModel model = modelNullable.Value;
-			model.won = true;
+				// 3. Update winner flag
+				MatchdataMemberModel model = modelNullable.Value;
+				model.won = true;
 
-			// 4. Serialize back
-			string updatedJson = JsonSerializer.Serialize(model);
+				// 4. Serialize back
+				string updatedJson = JsonSerializer.Serialize(model);
 
-			// 5. Build setter expression
-			var setter = BuildWinnerSetter(slotIndex, updatedJson);
+				// 5. Build setter expression
+				var setter = BuildWinnerSetter(slotIndex, updatedJson);
 
-			// 6. Execute update (single SQL UPDATE)
-			await db.MatchHistory
-				.Where(m => m.MatchId == (long)matchId)
-				.ExecuteUpdateAsync(setter);
+				// 6. Execute update (single SQL UPDATE)
+				await db.MatchHistory
+					.Where(m => m.MatchId == (long)matchId)
+					.ExecuteUpdateAsync(setter);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] UpdateMatchHistoryMakeWinner failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 
@@ -647,13 +664,29 @@ namespace Database
 		{
 			MatchHistoryCollection collection = new();
 
-			await foreach (var entry in _getMatchesInRange(db, startID, endID))
+			try
 			{
-				// Load JSON members (optional optimization below)
-				var entity = await db.MatchHistory
-					.Where(m => m.MatchId == entry.match_id)
+				// Single query fetches metadata + all slot columns — no concurrent reader issue.
+				var rows = await db.MatchHistory
+					.Where(m => m.MatchId >= startID && m.MatchId <= endID && m.Finished)
 					.Select(m => new
 					{
+						m.MatchId,
+						m.Owner,
+						m.Name,
+						m.Finished,
+						m.Started,
+						m.TimeFinished,
+						m.MapName,
+						m.MapPath,
+						m.MatchRosterType,
+						m.MapOfficial,
+						m.VanillaTeams,
+						m.StartingCash,
+						m.LimitSuperweapons,
+						m.TrackStats,
+						m.AllowObservers,
+						m.MaxCamHeight,
 						m.MemberSlot0,
 						m.MemberSlot1,
 						m.MemberSlot2,
@@ -663,19 +696,45 @@ namespace Database
 						m.MemberSlot6,
 						m.MemberSlot7
 					})
-					.FirstAsync();
+					.ToListAsync();
 
-				// Deserialize only if not null
-				AddMemberIfNotNull(entry, entity.MemberSlot0);
-				AddMemberIfNotNull(entry, entity.MemberSlot1);
-				AddMemberIfNotNull(entry, entity.MemberSlot2);
-				AddMemberIfNotNull(entry, entity.MemberSlot3);
-				AddMemberIfNotNull(entry, entity.MemberSlot4);
-				AddMemberIfNotNull(entry, entity.MemberSlot5);
-				AddMemberIfNotNull(entry, entity.MemberSlot6);
-				AddMemberIfNotNull(entry, entity.MemberSlot7);
+				foreach (var row in rows)
+				{
+					var entry = new MatchHistory_Entry(
+						row.MatchId,
+						row.Owner,
+						row.Name,
+						row.Finished,
+						row.Started.ToString("O"),
+						row.TimeFinished.ToString("O"),
+						row.MapName,
+						row.MapPath ?? string.Empty,
+						row.MatchRosterType,
+						row.MapOfficial,
+						row.VanillaTeams,
+						row.StartingCash,
+						row.LimitSuperweapons,
+						row.TrackStats,
+						row.AllowObservers,
+						row.MaxCamHeight
+					);
 
-				collection.matches.Add(entry);
+					AddMemberIfNotNull(entry, row.MemberSlot0);
+					AddMemberIfNotNull(entry, row.MemberSlot1);
+					AddMemberIfNotNull(entry, row.MemberSlot2);
+					AddMemberIfNotNull(entry, row.MemberSlot3);
+					AddMemberIfNotNull(entry, row.MemberSlot4);
+					AddMemberIfNotNull(entry, row.MemberSlot5);
+					AddMemberIfNotNull(entry, row.MemberSlot6);
+					AddMemberIfNotNull(entry, row.MemberSlot7);
+
+					collection.matches.Add(entry);
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetMatchesInRange failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
 			}
 
 			return collection;
@@ -695,8 +754,17 @@ namespace Database
 
 		public static async Task<long> GetHighestMatchID(AppDbContext db)
 		{
-			long? result = await _getHighestMatchId(db);
-			return result ?? -1;
+			try
+			{
+				long? result = await _getHighestMatchId(db);
+				return result ?? -1;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetHighestMatchID failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+				return -1;
+			}
 		}
 
 		// Called when a lobby is deleted, thats the true end of a match
@@ -705,34 +773,37 @@ namespace Database
 			if (lobby.MatchID == 0)
 				return;
 
-			await db.MatchHistory
-				.Where(m => m.MatchId == (long)lobby.MatchID && !m.Finished)
-				.ExecuteUpdateAsync(s => s
-					.SetProperty(m => m.Finished, true)
-					.SetProperty(m => m.TimeFinished, DateTime.UtcNow));
+			try
+			{
+				await db.MatchHistory
+					.Where(m => m.MatchId == (long)lobby.MatchID && !m.Finished)
+					.ExecuteUpdateAsync(s => s
+						.SetProperty(m => m.Finished, true)
+						.SetProperty(m => m.TimeFinished, DateTime.UtcNow));
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] CommitLobbyToMatchHistory failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		// METADATA
 		private static Expression<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>
 	BuildSlotSetter(int slotIndex, string updatedJson)
 		{
-			var param = Expression.Parameter(typeof(SetPropertyCalls<MatchHistoryEntry>), "s");
-
-			var call = Expression.Call(
-				param,
-				nameof(SetPropertyCalls<MatchHistoryEntry>.SetProperty),
-				typeArguments: null,
-				arguments: new Expression[]
-				{
-			_slotSelectors[slotIndex],
-			Expression.Constant(updatedJson, typeof(string))
-				}
-			);
-
-			return Expression.Lambda<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>(
-				call,
-				param
-			);
+			return slotIndex switch
+			{
+				0 => s => s.SetProperty(m => m.MemberSlot0, updatedJson),
+				1 => s => s.SetProperty(m => m.MemberSlot1, updatedJson),
+				2 => s => s.SetProperty(m => m.MemberSlot2, updatedJson),
+				3 => s => s.SetProperty(m => m.MemberSlot3, updatedJson),
+				4 => s => s.SetProperty(m => m.MemberSlot4, updatedJson),
+				5 => s => s.SetProperty(m => m.MemberSlot5, updatedJson),
+				6 => s => s.SetProperty(m => m.MemberSlot6, updatedJson),
+				7 => s => s.SetProperty(m => m.MemberSlot7, updatedJson),
+				_ => throw new ArgumentOutOfRangeException(nameof(slotIndex))
+			};
 		}
 
 
@@ -746,38 +817,46 @@ namespace Database
 			if (matchId == 0 || slotIndex < 0 || slotIndex > 7)
 				return;
 
-			// 1. Load JSON for this slot
-			string? json = await _getMemberSlot(db, (long)matchId, slotIndex);
-			if (string.IsNullOrEmpty(json))
-				return;
-
-			// 2. Deserialize
-			MatchdataMemberModel? modelN = JsonSerializer.Deserialize<MatchdataMemberModel?>(json);
-			if (modelN == null)
-				return;
-
-			MatchdataMemberModel model = modelN.Value;
-
-			// 3. Ensure metadata list exists
-			model.metadata ??= new List<MemberMetadataModel>();
-
-			// 4. Append metadata entry
-			model.metadata.Add(new MemberMetadataModel
+			try
 			{
-				file_name = fileName,
-				file_type = (EMetadataFileType)fileType
-			});
+				// 1. Load JSON for this slot
+				string? json = await _getMemberSlot(db, (long)matchId, slotIndex);
+				if (string.IsNullOrEmpty(json))
+					return;
 
-			// 5. Serialize back
-			string updatedJson = JsonSerializer.Serialize(model);
+				// 2. Deserialize
+				MatchdataMemberModel? modelN = JsonSerializer.Deserialize<MatchdataMemberModel?>(json);
+				if (modelN == null)
+					return;
 
-			// 6. Build setter expression
-			var setter = BuildSlotSetter(slotIndex, updatedJson);
+				MatchdataMemberModel model = modelN.Value;
 
-			// 7. Execute update (single SQL UPDATE)
-			await db.MatchHistory
-				.Where(m => m.MatchId == (long)matchId)
-				.ExecuteUpdateAsync(setter);
+				// 3. Ensure metadata list exists
+				model.metadata ??= new List<MemberMetadataModel>();
+
+				// 4. Append metadata entry
+				model.metadata.Add(new MemberMetadataModel
+				{
+					file_name = fileName,
+					file_type = (EMetadataFileType)fileType
+				});
+
+				// 5. Serialize back
+				string updatedJson = JsonSerializer.Serialize(model);
+
+				// 6. Build setter expression
+				var setter = BuildSlotSetter(slotIndex, updatedJson);
+
+				// 7. Execute update (single SQL UPDATE)
+				await db.MatchHistory
+					.Where(m => m.MatchId == (long)matchId)
+					.ExecuteUpdateAsync(setter);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] AttachMatchHistoryMetadata failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		// ELO
@@ -788,17 +867,25 @@ namespace Database
 			if (lobby.LobbyType != ELobbyType.QuickMatch)
 				return;
 
-			int dayOfYear = lobby.TimeCreated.DayOfYear;
-			int monthOfYear = lobby.TimeCreated.Month;
-			int year = lobby.TimeCreated.Year;
+			try
+			{
+				int dayOfYear = lobby.TimeCreated.DayOfYear;
+				int monthOfYear = lobby.TimeCreated.Month;
+				int year = lobby.TimeCreated.Year;
 
-			var members = await LoadMatchMembersAsync(db, (long)lobby.MatchID);
-			if (members.Count == 0)
-				return;
+				var members = await LoadMatchMembersAsync(db, (long)lobby.MatchID);
+				if (members.Count == 0)
+					return;
 
-			await UpdateCurrentEloAsync(db, members);
-			await UpdatePeriodEloAndLeaderboardsAsync(
-				db, members, dayOfYear, monthOfYear, year);
+				await UpdateCurrentEloAsync(db, members);
+				await UpdatePeriodEloAndLeaderboardsAsync(
+					db, members, dayOfYear, monthOfYear, year);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] UpdateLeaderboardAndElo failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 		private static async Task<List<MatchdataMemberModel>> LoadMatchMembersAsync(
 			AppDbContext db, long matchId)
@@ -838,6 +925,9 @@ namespace Database
 						continue;
 
 					if (b.team == a.team && a.team != -1)
+						continue;
+
+					if (a.user_id >= b.user_id)
 						continue;
 
 					ref EloData A = ref CollectionsMarshal.GetValueRefOrAddDefault(
@@ -914,6 +1004,9 @@ namespace Database
 						continue;
 
 					if (b.team == a.team && a.team != -1)
+						continue;
+
+					if (a.user_id >= b.user_id)
 						continue;
 
 					// Daily

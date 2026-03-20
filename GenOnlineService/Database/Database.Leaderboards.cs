@@ -1,4 +1,4 @@
-/*
+﻿/*
 **    GeneralsOnline Game Services - Backend Services for Command & Conquer Generals Online: Zero Hour
 **    Copyright (C) 2025  GeneralsOnline Development Team
 **
@@ -164,35 +164,6 @@ namespace Database
 			public int Matches { get; set; }
 		}
 
-		public class LeaderboardDaily
-		{
-			public long UserId { get; set; }
-			public int? Points { get; set; }
-			public int DayOfYear { get; set; }
-			public int Year { get; set; }
-			public int? Wins { get; set; }
-			public int? Losses { get; set; }
-		}
-
-		public class LeaderboardMonthly
-		{
-			public long UserId { get; set; }
-			public int? Points { get; set; }
-			public int MonthOfYear { get; set; }
-			public int Year { get; set; }
-			public int? Wins { get; set; }
-			public int? Losses { get; set; }
-		}
-
-		public class LeaderboardYearly
-		{
-			public long UserId { get; set; }
-			public int? Points { get; set; }
-			public int Year { get; set; }
-			public int? Wins { get; set; }
-			public int? Losses { get; set; }
-		}
-
 		public static class LeaderboardQueries
 		{
 			public static readonly Func<AppDbContext, List<long>, int, int, IAsyncEnumerable<LeaderboardRow>> DailyBulk =
@@ -242,52 +213,60 @@ namespace Database
 
 		public static async Task CreateUserEntriesIfNotExists(AppDbContext db, long playerId)
 		{
-			int dayOfYear = DateTime.UtcNow.DayOfYear;
-			int monthOfYear = DateTime.UtcNow.Month;
-			int year = DateTime.UtcNow.Year;
-
-			var daily = new LeaderboardDaily
-			{
-				UserId = playerId,
-				Points = EloConfig.BaseRating,
-				DayOfYear = dayOfYear,
-				Year = year,
-				Wins = 0,
-				Losses = 0
-			};
-
-			var monthly = new LeaderboardMonthly
-			{
-				UserId = playerId,
-				Points = EloConfig.BaseRating,
-				MonthOfYear = monthOfYear,
-				Year = year,
-				Wins = 0,
-				Losses = 0
-			};
-
-			var yearly = new LeaderboardYearly
-			{
-				UserId = playerId,
-				Points = EloConfig.BaseRating,
-				Year = year,
-				Wins = 0,
-				Losses = 0
-			};
-
-			db.Add(daily);
-			db.Add(monthly);
-			db.Add(yearly);
-
 			try
 			{
-				await db.SaveChangesAsync();
+				int dayOfYear = DateTime.UtcNow.DayOfYear;
+				int monthOfYear = DateTime.UtcNow.Month;
+				int year = DateTime.UtcNow.Year;
+
+				var daily = new LeaderboardDaily
+				{
+					UserId = playerId,
+					Points = EloConfig.BaseRating,
+					DayOfYear = dayOfYear,
+					Year = year,
+					Wins = 0,
+					Losses = 0
+				};
+
+				var monthly = new LeaderboardMonthly
+				{
+					UserId = playerId,
+					Points = EloConfig.BaseRating,
+					MonthOfYear = monthOfYear,
+					Year = year,
+					Wins = 0,
+					Losses = 0
+				};
+
+				var yearly = new LeaderboardYearly
+				{
+					UserId = playerId,
+					Points = EloConfig.BaseRating,
+					Year = year,
+					Wins = 0,
+					Losses = 0
+				};
+
+				db.Add(daily);
+				db.Add(monthly);
+				db.Add(yearly);
+
+				try
+				{
+					await db.SaveChangesAsync();
+				}
+				catch (DbUpdateException ex)
+				{
+					// Ignore duplicate key errors (INSERT IGNORE behavior)
+					if (!IsDuplicateKeyException(ex))
+						throw;
+				}
 			}
-			catch (DbUpdateException ex)
+			catch (Exception ex)
 			{
-				// Ignore duplicate key errors (INSERT IGNORE behavior)
-				if (!IsDuplicateKeyException(ex))
-					throw;
+				Console.WriteLine($"[ERROR] CreateUserEntriesIfNotExists failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
 			}
 		}
 
@@ -308,9 +287,6 @@ namespace Database
 		}
 
 
-		// Reusable buffer to avoid allocating a new Task[] every call
-		private static readonly Task[] _taskBuffer = new Task[3];
-
 		public async static ValueTask<Dictionary<long, LeaderboardPoints>> GetBulkLeaderboardData(
    AppDbContext db,
    List<long> playerIDs,
@@ -326,41 +302,44 @@ namespace Database
 			foreach (var id in playerIDs)
 				results[id] = new LeaderboardPoints();
 
-			var dailyTask = MaterializeAsync(LeaderboardQueries.DailyBulk(db, playerIDs, dayOfYear, year));
-			var monthlyTask = MaterializeAsync(LeaderboardQueries.MonthlyBulk(db, playerIDs, monthOfYear, year));
-			var yearlyTask = MaterializeAsync(LeaderboardQueries.YearlyBulk(db, playerIDs, year));
-
-			_taskBuffer[0] = dailyTask;
-			_taskBuffer[1] = monthlyTask;
-			_taskBuffer[2] = yearlyTask;
-
-			await Task.WhenAll(_taskBuffer).ConfigureAwait(false);
-
-			// DAILY
-			foreach (var row in dailyTask.Result)
+			try
 			{
-				var entry = results[row.UserId];
-				entry.daily = row.Points;
-				entry.daily_matches = row.Matches;
-				results[row.UserId] = entry;
+				// Queries must run sequentially — DbContext does not support concurrent operations.
+				var daily = await MaterializeAsync(LeaderboardQueries.DailyBulk(db, playerIDs, dayOfYear, year));
+				var monthly = await MaterializeAsync(LeaderboardQueries.MonthlyBulk(db, playerIDs, monthOfYear, year));
+				var yearly = await MaterializeAsync(LeaderboardQueries.YearlyBulk(db, playerIDs, year));
+
+				// DAILY
+				foreach (var row in daily)
+				{
+					var entry = results[row.UserId];
+					entry.daily = row.Points;
+					entry.daily_matches = row.Matches;
+					results[row.UserId] = entry;
+				}
+
+				// MONTHLY
+				foreach (var row in monthly)
+				{
+					var entry = results[row.UserId];
+					entry.monthly = row.Points;
+					entry.monthly_matches = row.Matches;
+					results[row.UserId] = entry;
+				}
+
+				// YEARLY
+				foreach (var row in yearly)
+				{
+					var entry = results[row.UserId];
+					entry.yearly = row.Points;
+					entry.yearly_matches = row.Matches;
+					results[row.UserId] = entry;
+				}
 			}
-
-			// MONTHLY
-			foreach (var row in monthlyTask.Result)
+			catch (Exception ex)
 			{
-				var entry = results[row.UserId];
-				entry.monthly = row.Points;
-				entry.monthly_matches = row.Matches;
-				results[row.UserId] = entry;
-			}
-
-			// YEARLY
-			foreach (var row in yearlyTask.Result)
-			{
-				var entry = results[row.UserId];
-				entry.yearly = row.Points;
-				entry.yearly_matches = row.Matches;
-				results[row.UserId] = entry;
+				Console.WriteLine($"[ERROR] GetBulkLeaderboardData failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
 			}
 
 			return results;

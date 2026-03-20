@@ -260,7 +260,11 @@ namespace GenOnlineService
 				return -1;
 			}
 
-			return Convert.ToInt64(controller.User.Claims.First().Value);
+			var claim = controller.User.FindFirst(ClaimTypes.NameIdentifier);
+			if (claim == null || !Int64.TryParse(claim.Value, out Int64 userId))
+				return -1;
+
+			return userId;
 		}
 
 		public static List<string> GetRoles(ControllerBase controller)
@@ -278,6 +282,9 @@ namespace GenOnlineService
 		{
 			var first = controller.User.FindFirst("client_id");
 
+			if (first == null)
+				return KnownClients.EKnownClients.unknown;
+
 			if (int.TryParse(first.Value, out int clientIDInt32))
 			{
 				// Validate if the int corresponds to a defined enum value
@@ -294,6 +301,9 @@ namespace GenOnlineService
 		public static EUserSessionType GetSessionType(ControllerBase controller)
 		{
 			var first = controller.User.FindFirst("session_type");
+
+			if (first == null)
+				return EUserSessionType.None;
 
 			if (int.TryParse(first.Value, out int sessionTypeInt32))
 			{
@@ -419,6 +429,12 @@ namespace GenOnlineService
 
 					options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 
+#if RELEASE
+					options.UseLoggerFactory(LoggerFactory.Create(builder => { })); // Empty logger
+					options.EnableSensitiveDataLogging(false); // Ensure sensitive data is not logged
+					options.EnableDetailedErrors(false);      // Disable detailed error messages
+#endif
+
 				});
 			}
 		}
@@ -459,6 +475,7 @@ namespace GenOnlineService
 				if (firstType == null || string.IsNullOrEmpty(firstType.Value))
 				{
 					context.Fail("Failed Validation #8");
+					return Task.CompletedTask;
 				}
 
 				string strTypeClaim = firstType.Value;
@@ -489,6 +506,7 @@ namespace GenOnlineService
 				if (context.Principal.FindFirst(JwtRegisteredClaimNames.Address) == null)
 				{
 					context.Fail("Failed Validation #7");
+					return Task.CompletedTask;
 				}
 
 				string strExpectedIP = context.Principal.FindFirst(JwtRegisteredClaimNames.Address).Value;
@@ -1021,7 +1039,7 @@ namespace GenOnlineService
 					var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
 
 					int numLobbies = lobbyManager.GetNumLobbies();
-					await StatsTracker.Update(numLobbies, WebSocketManager.GetUserDataCache().Count);
+					await StatsTracker.Update(numLobbies, WebSocketManager.GetNumberOfUsersOnline());
 
 					await lobbyManager.Cleanup();
 				}

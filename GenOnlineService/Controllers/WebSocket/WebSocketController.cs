@@ -125,10 +125,12 @@ namespace GenOnlineService.Controllers
 				return;
 			}
 
+			EUserSessionType sessType = TokenHelper.GetSessionType(this);
+
 			await using var db = await _dbFactory.CreateDbContextAsync();
 			UserWebSocketInstance wsSess = await WebSocketManager.CreateSession(
 				db,
-				EUserSessionType.GameClient,
+				sessType,
 				bIsReconnect,
 				user_id,
 				client_id,
@@ -172,7 +174,7 @@ namespace GenOnlineService.Controllers
 				}
 				catch (OperationCanceledException)
 				{
-					// No message received in 30s â€” send a keep-alive pong and continue waiting
+					// No message received in 30s — send a keep-alive pong and continue waiting
 					wsSess.SendPong();
 					continue;
 				}
@@ -195,6 +197,14 @@ namespace GenOnlineService.Controllers
 				var segment = new ArraySegment<byte>(buffer, 0, receiveResult.Count);
 
 				UserSession? sourceUserData = WebSocketManager.GetSessionFromUser(wsSess.m_UserID, wsSess.m_SessionType);
+
+				// if we lost session data, close WS
+				if (sourceUserData == null)
+				{
+					wsSess.CloseAsync(WebSocketCloseStatus.NormalClosure, "User signed in from another point of presence [B]");
+					break;
+				}
+
 				await ProcessWSMessage(wsSess, sourceUserData, receiveResult, segment);
 			}
 

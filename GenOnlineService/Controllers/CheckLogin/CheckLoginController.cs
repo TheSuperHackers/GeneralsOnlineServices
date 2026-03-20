@@ -141,11 +141,17 @@ namespace GenOnlineService.Controllers
 								}
 
 								user_id = highestIDFound + 1;
+
+								bool bTestSPOP = false;
+								if (bTestSPOP)
+								{
+									user_id = 0;
+								}
 								strDisplayName = String.Format("DEV_ACCOUNT_{0}", Math.Abs(user_id) - 1);
 
 
 								// make user
-								await Database.Users.CreateUserIfNotExists_DevAccount(db, user_id, result.display_name);
+								await Database.Users.CreateUserIfNotExists_DevAccount(db, user_id, strDisplayName);
 							}
 
 							bool bIsAdmin = await Database.Users.IsUserAdmin(db, user_id);

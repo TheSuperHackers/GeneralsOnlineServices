@@ -350,7 +350,7 @@ public class DiscordBot
 
 						if (message.Content.ToLower() == "!playercount" || message.Content.ToLower() == "!players")
 						{
-							int numPlayers = GenOnlineService.WebSocketManager.GetUserDataCache().Count;
+							int numPlayers = GenOnlineService.WebSocketManager.GetNumberOfUsersOnline();
 							string strMessage = String.Format("There are currently {0} players online.", numPlayers);
 
 							if (enumChannelID == EDiscordChannelIDs.DirectMessage)

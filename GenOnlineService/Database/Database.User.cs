@@ -50,26 +50,26 @@ public class User
 	public EAccountType AccountType { get; set; } = EAccountType.Unknown;
 
 	// Steam, only present if AccountType is Steam
-	public Int64 SteamID { get; set; } = -1;
+	public Int64? SteamID { get; set; } = -1;
 
 	// Discord, only present if AccountType is Discord
-	public Int64 DiscordID { get; set; } = -1;
-	public string DiscordUsername { get; set; } = String.Empty;
+	public Int64? DiscordID { get; set; } = -1;
+	public string? DiscordUsername { get; set; } = String.Empty;
 
 	// GameReplays, only present if AccountType is GameReplays
-	public Int64 GameReplaysID { get; set; } = -1;
-	public string GameReplaysUsername { get; set; } = String.Empty;
+	public Int64? GameReplaysID { get; set; } = -1;
+	public string? GameReplaysUsername { get; set; } = String.Empty;
 
 
-	public string DisplayName { get; set; } = "";
+	public string? DisplayName { get; set; } = "";
 	public DateTime LastLogin { get; set; } = DateTime.UnixEpoch;
-	public string LastIPAddress { get; set; } = String.Empty;
-	public int ClientID { get; set; } = -1;
+	public string? LastIPAddress { get; set; } = String.Empty;
+	public KnownClients.EKnownClients ClientID { get; set; } = KnownClients.EKnownClients.custom_third_party_client;
 
 	// Gameplay Favorites
 	public int FavoriteColor { get; set; } = -1;
 	public int FavoriteSide { get; set; } = -1;
-	public string FavoriteMap { get; set; } = String.Empty;
+	public string? FavoriteMap { get; set; } = String.Empty;
 	public int FavoriteStartingMoney { get; set; } = -1;
 	public bool LimitSuperweapons { get; set; } = false;
 
@@ -82,10 +82,10 @@ public class User
 	public int EloNumberOfMatches { get; set; } = 0;
 
 	// Bans
-	public string BanReason { get; set; } = String.Empty;
-	public string BannedBy { get; set; } = String.Empty;
-	public string BanVerifiedBy { get; set; } = String.Empty;
-	public string BanAliases { get; set; } = String.Empty;
+	public string? BanReason { get; set; } = String.Empty;
+	public string? BannedBy { get; set; } = String.Empty;
+	public string? BanVerifiedBy { get; set; } = String.Empty;
+	public string? BanAliases { get; set; } = String.Empty;
 }
 
 public class UserLobbyPreferences
@@ -185,8 +185,17 @@ namespace Database
 
 		public static async Task<EPendingLoginState?> GetPendingLoginState(AppDbContext db, string gameCode)
 		{
-			string code = gameCode.ToUpper();
-			return await _getPendingLoginState(db, code);
+			try
+			{
+				string code = gameCode.ToUpper();
+				return await _getPendingLoginState(db, code);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetPendingLoginState failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+				return null;
+			}
 		}
 
 
@@ -202,31 +211,56 @@ namespace Database
 
 		public static async Task Cleanup(AppDbContext db, bool startup)
 		{
-			TimeSpan threshold = startup ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(5);
+			try
+			{
+				TimeSpan threshold = startup ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(5);
 
-			DateTime cutoff = DateTime.UtcNow - threshold;
+				DateTime cutoff = DateTime.UtcNow - threshold;
 
-			await db.PendingLogins
-				.Where(p => p.Created <= cutoff)
-				.ExecuteDeleteAsync();
+				await db.PendingLogins
+					.Where(p => p.Created <= cutoff)
+					.ExecuteDeleteAsync();
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] PendingLogins.Cleanup failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		public static async Task<long> GetUserIDFromPendingLogin(AppDbContext db, string gameCode)
 		{
-			gameCode = gameCode.ToUpper();
+			try
+			{
+				gameCode = gameCode.ToUpper();
 
-			var result = await GetUserIdFromCode(db, gameCode);
+				var result = await GetUserIdFromCode(db, gameCode);
 
-			return result ?? -1;
+				return result ?? -1;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetUserIDFromPendingLogin failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+				return -1;
+			}
 		}
 
 		public static async Task CleanupPendingLogin(AppDbContext db, string gameCode)
 		{
-			gameCode = gameCode.ToUpper();
+			try
+			{
+				gameCode = gameCode.ToUpper();
 
-			await db.PendingLogins
-				.Where(p => p.LoginCode == gameCode)
-				.ExecuteDeleteAsync();
+				await db.PendingLogins
+					.Where(p => p.LoginCode == gameCode)
+					.ExecuteDeleteAsync();
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] CleanupPendingLogin failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 	}
@@ -251,36 +285,44 @@ namespace Database
 			string hwid_2,
 			string ipAddr)
 		{
-			// raw versions
-			string hwid_3 = hwid_0.ToUpper();
-			string hwid_4 = hwid_1.ToUpper();
-			string hwid_5 = hwid_2.ToUpper();
-
-			// hashed versions
-			string h0 = Helpers.ComputeMD5Hash(hwid_0).ToUpper();
-			string h1 = Helpers.ComputeMD5Hash(hwid_1).ToUpper();
-			string h2 = Helpers.ComputeMD5Hash(hwid_2).ToUpper();
-
-			// check if exists (precompiled query)
-			var existing = await FindDevice(db, userId, h0, h1, h2);
-			if (existing != null)
-				return;
-
-			// insert new (if doesnt exist)
-			var device = new UserDevice
+			try
 			{
-				UserID = userId,
-				HWID_0 = h0,
-				HWID_1 = h1,
-				HWID_2 = h2,
-				HWID_3 = hwid_3,
-				HWID_4 = hwid_4,
-				HWID_5 = hwid_5,
-				IPAddress = ipAddr
-			};
+				// raw versions
+				string hwid_3 = hwid_0.ToUpper();
+				string hwid_4 = hwid_1.ToUpper();
+				string hwid_5 = hwid_2.ToUpper();
 
-			db.UserDevices.Add(device);
-			await db.SaveChangesAsync();
+				// hashed versions
+				string h0 = Helpers.ComputeMD5Hash(hwid_0).ToUpper();
+				string h1 = Helpers.ComputeMD5Hash(hwid_1).ToUpper();
+				string h2 = Helpers.ComputeMD5Hash(hwid_2).ToUpper();
+
+				// check if exists (precompiled query)
+				var existing = await FindDevice(db, userId, h0, h1, h2);
+				if (existing != null)
+					return;
+
+				// insert new (if doesnt exist)
+				var device = new UserDevice
+				{
+					UserID = userId,
+					HWID_0 = h0,
+					HWID_1 = h1,
+					HWID_2 = h2,
+					HWID_3 = hwid_3,
+					HWID_4 = hwid_4,
+					HWID_5 = hwid_5,
+					IPAddress = ipAddr
+				};
+
+				db.UserDevices.Add(device);
+				await db.SaveChangesAsync();
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] RegisterUserDevice failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 	}
 
@@ -342,7 +384,7 @@ namespace Database
 				  {
 					  favorite_color = u.FavoriteColor,
 					  favorite_side = u.FavoriteSide,
-					  favorite_map = u.FavoriteMap,
+					  favorite_map = u.FavoriteMap ?? String.Empty,
 					  favorite_starting_money = u.FavoriteStartingMoney,
 					  favorite_limit_superweapons = u.LimitSuperweapons
 				  })
@@ -364,17 +406,25 @@ namespace Database
 			if (userIds == null || userIds.Count == 0)
 				return results;
 
-			// Execute compiled query
-			await foreach (var u in _compiledBulkQuery(db, userIds))
+			try
 			{
-				results[u.ID] = new EloData(u.EloRating, u.EloNumberOfMatches);
-			}
+				// Execute compiled query
+				await foreach (var u in _compiledBulkQuery(db, userIds))
+				{
+					results[u.ID] = new EloData(u.EloRating, u.EloNumberOfMatches);
+				}
 
-			// Fill missing users with defaults
-			foreach (var id in userIds)
+				// Fill missing users with defaults
+				foreach (var id in userIds)
+				{
+					if (!results.ContainsKey(id))
+						results[id] = new EloData(EloConfig.BaseRating, 0);
+				}
+			}
+			catch (Exception ex)
 			{
-				if (!results.ContainsKey(id))
-					results[id] = new EloData(EloConfig.BaseRating, 0);
+				Console.WriteLine($"[ERROR] GetBulkELOData failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
 			}
 
 			return results;
@@ -399,53 +449,105 @@ namespace Database
 
 			if (!exists)
 			{
-				db.Users.Add(new User
+				// needs try catch because debug client spams this
+				try
 				{
-					ID = userId,
-					AccountType = EAccountType.DevAccount,
-					DisplayName = displayName
-				});
+					db.Users.Add(new User
+					{
+						ID = userId,
+						AccountType = EAccountType.DevAccount,
+						DisplayName = displayName
+					});
 
-				await db.SaveChangesAsync();
+					await db.SaveChangesAsync();
+				}
+				catch
+				{
+
+				}
 			}
 		}
 
 #endif
 
-		public static Task<bool> IsUserAdmin(AppDbContext db, long userId)
+		public static async Task<bool> IsUserAdmin(AppDbContext db, long userId)
 		{
-			return _isUserAdminQuery(db, userId);
+			try
+			{
+				return await _isUserAdminQuery(db, userId);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] IsUserAdmin failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+				return false;
+			}
 		}
 
 		public static async Task<Dictionary<long, string>> GetDisplayNameBulk(AppDbContext db, List<long> lstUserIDs)
 		{
 			var dict = new Dictionary<long, string>(lstUserIDs.Count);
 
-			await foreach (var user in _getUsersByIds(db, lstUserIDs))
+			try
 			{
-				if (user.DisplayName is not null)
+				await foreach (var user in _getUsersByIds(db, lstUserIDs))
 				{
-					dict[user.ID] = user.DisplayName;
+					if (user.DisplayName is not null)
+					{
+						dict[user.ID] = user.DisplayName;
+					}
 				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetDisplayNameBulk failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
 			}
 
 			return dict;
 		}
 
-		public static Task<bool> IsUserBanned(AppDbContext db, long userId)
+		public static async Task<bool> IsUserBanned(AppDbContext db, long userId)
 		{
-			return _isUserBannedQuery(db, userId);
+			try
+			{
+				return await _isUserBannedQuery(db, userId);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] IsUserBanned failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+				return false;
+			}
 		}
 
 
 		public static async Task<string> GetDisplayName(AppDbContext db, long userId)
 		{
-			return await _getDisplayNameQuery(db, userId) ?? string.Empty;
+			try
+			{
+				return await _getDisplayNameQuery(db, userId) ?? string.Empty;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetDisplayName failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+				return string.Empty;
+			}
 		}
 
-		public static Task<UserLobbyPreferences?> GetUserLobbyPreferences(AppDbContext db, long userId)
+		public static async Task<UserLobbyPreferences?> GetUserLobbyPreferences(AppDbContext db, long userId)
 		{
-			return _getUserLobbyPreferencesQuery(db, userId);
+			try
+			{
+				return await _getUserLobbyPreferencesQuery(db, userId);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetUserLobbyPreferences failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+				return null;
+			}
 		}
 
 		// TODO_EFCORE: check all queries, determine which ones should be moved to precompiled query
@@ -454,16 +556,32 @@ namespace Database
 			long userId,
 			bool bLimitSuperweapons)
 		{
-			// TODO_EFCORE: Check all sets, some may want to be execute update instead of db.SaveChangesAsync(); as this requires a lookup first
-			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.LimitSuperweapons, bLimitSuperweapons));
+			try
+			{
+				// TODO_EFCORE: Check all sets, some may want to be execute update instead of db.SaveChangesAsync(); as this requires a lookup first
+				await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.LimitSuperweapons, bLimitSuperweapons));
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] SetFavorite_LimitSuperweapons failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		public static async Task<EloData> GetELOData(AppDbContext db, long userId)
 		{
-			var result = await GetEloData(db, userId);
+			try
+			{
+				var result = await GetEloData(db, userId);
 
-			if (result != null)
-				return result;
+				if (result != null)
+					return result;
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetELOData failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 
 			return new EloData(EloConfig.BaseRating, 0);
 		}
@@ -474,17 +592,33 @@ namespace Database
 			long userId,
 			string strMap)
 		{
-			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteMap, strMap));
+			try
+			{
+				await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteMap, strMap));
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] SetFavorite_Map failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		public static async Task UpdateLastLoginData(AppDbContext db, long userId, string ipAddr)
 		{
-			await db.Users
-				.Where(u => u.ID == userId)
-				.ExecuteUpdateAsync(setters => setters
-					.SetProperty(u => u.LastLogin, DateTime.UtcNow)
-					.SetProperty(u => u.LastIPAddress, ipAddr)
-				);
+			try
+			{
+				await db.Users
+					.Where(u => u.ID == userId)
+					.ExecuteUpdateAsync(setters => setters
+						.SetProperty(u => u.LastLogin, DateTime.UtcNow)
+						.SetProperty(u => u.LastIPAddress, ipAddr)
+					);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] UpdateLastLoginData failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 
@@ -493,7 +627,15 @@ namespace Database
 			long userId,
 			int startingMoney)
 		{
-			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteStartingMoney, startingMoney));
+			try
+			{
+				await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteStartingMoney, startingMoney));
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] SetFavorite_StartingMoney failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		public static async Task SetFavorite_Side(
@@ -501,16 +643,32 @@ namespace Database
 			long userId,
 			int side)
 		{
-			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteSide, side));
+			try
+			{
+				await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteSide, side));
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] SetFavorite_Side failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		public static async Task SetDisplayName(AppDbContext db, long userId, string newName)
 		{
-			await db.Users
-				.Where(u => u.ID == userId)
-				.ExecuteUpdateAsync(setters => setters
-					.SetProperty(u => u.DisplayName, newName)
-				);
+			try
+			{
+				await db.Users
+					.Where(u => u.ID == userId)
+					.ExecuteUpdateAsync(setters => setters
+						.SetProperty(u => u.DisplayName, newName)
+					);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] SetDisplayName failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		public static async Task SetFavorite_Color(
@@ -518,17 +676,33 @@ namespace Database
 			long userId,
 			int color)
 		{
-			await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteColor, color));
+			try
+			{
+				await db.Users.Where(u => u.ID == userId).ExecuteUpdateAsync(setters => setters.SetProperty(u => u.FavoriteColor, color));
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] SetFavorite_Color failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 		public static async Task SaveELOData(AppDbContext db, long userId, EloData newEloData)
 		{
-			await db.Users
-				.Where(u => u.ID == userId)
-				.ExecuteUpdateAsync(setters => setters
-					.SetProperty(u => u.EloRating, newEloData.Rating)
-					.SetProperty(u => u.EloNumberOfMatches, newEloData.NumMatches)
-				);
+			try
+			{
+				await db.Users
+					.Where(u => u.ID == userId)
+					.ExecuteUpdateAsync(setters => setters
+						.SetProperty(u => u.EloRating, newEloData.Rating)
+						.SetProperty(u => u.EloNumberOfMatches, newEloData.NumMatches)
+					);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] SaveELOData failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
 		}
 
 	}
