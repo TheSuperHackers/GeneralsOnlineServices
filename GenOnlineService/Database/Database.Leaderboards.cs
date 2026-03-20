@@ -287,9 +287,6 @@ namespace Database
 		}
 
 
-		// Reusable buffer to avoid allocating a new Task[] every call
-		private static readonly Task[] _taskBuffer = new Task[3];
-
 		public async static ValueTask<Dictionary<long, LeaderboardPoints>> GetBulkLeaderboardData(
    AppDbContext db,
    List<long> playerIDs,
@@ -307,18 +304,13 @@ namespace Database
 
 			try
 			{
-				var dailyTask = MaterializeAsync(LeaderboardQueries.DailyBulk(db, playerIDs, dayOfYear, year));
-				var monthlyTask = MaterializeAsync(LeaderboardQueries.MonthlyBulk(db, playerIDs, monthOfYear, year));
-				var yearlyTask = MaterializeAsync(LeaderboardQueries.YearlyBulk(db, playerIDs, year));
-
-				_taskBuffer[0] = dailyTask;
-				_taskBuffer[1] = monthlyTask;
-				_taskBuffer[2] = yearlyTask;
-
-				await Task.WhenAll(_taskBuffer).ConfigureAwait(false);
+				// Queries must run sequentially — DbContext does not support concurrent operations.
+				var daily = await MaterializeAsync(LeaderboardQueries.DailyBulk(db, playerIDs, dayOfYear, year));
+				var monthly = await MaterializeAsync(LeaderboardQueries.MonthlyBulk(db, playerIDs, monthOfYear, year));
+				var yearly = await MaterializeAsync(LeaderboardQueries.YearlyBulk(db, playerIDs, year));
 
 				// DAILY
-				foreach (var row in dailyTask.Result)
+				foreach (var row in daily)
 				{
 					var entry = results[row.UserId];
 					entry.daily = row.Points;
@@ -327,7 +319,7 @@ namespace Database
 				}
 
 				// MONTHLY
-				foreach (var row in monthlyTask.Result)
+				foreach (var row in monthly)
 				{
 					var entry = results[row.UserId];
 					entry.monthly = row.Points;
@@ -336,7 +328,7 @@ namespace Database
 				}
 
 				// YEARLY
-				foreach (var row in yearlyTask.Result)
+				foreach (var row in yearly)
 				{
 					var entry = results[row.UserId];
 					entry.yearly = row.Points;

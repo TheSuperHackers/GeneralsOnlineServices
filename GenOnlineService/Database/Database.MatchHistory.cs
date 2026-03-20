@@ -168,6 +168,20 @@ namespace GenOnlineService
 		public EMetadataFileType file_type { get; set; }
 	}
 
+	// Handles JSON booleans stored as integers (0/1) from legacy MySQL tinyint serialization.
+	public sealed class BoolFromIntConverter : JsonConverter<bool>
+	{
+		public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+		{
+			if (reader.TokenType == JsonTokenType.Number)
+				return reader.GetInt32() != 0;
+			return reader.GetBoolean();
+		}
+
+		public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options)
+			=> writer.WriteBooleanValue(value);
+	}
+
 	public struct MatchdataMemberModel
 	{
 		public Int64 user_id { get; set; } = -1;            // bigint(20) NOT NULL
@@ -185,6 +199,7 @@ namespace GenOnlineService
 		public int units_lost { get; set; } = 0;           // int(11) DEFAULT NULL
 		public int total_money { get; set; } = 0;          // int(11) DEFAULT NULL
 
+		[JsonConverter(typeof(BoolFromIntConverter))]
 		public bool won { get; set; } = false;                // tinyint(4) DEFAULT NULL
 		public List<MemberMetadataModel> metadata { get; set; } = new List<MemberMetadataModel>();
 
@@ -234,23 +249,18 @@ namespace Database
 		private static Expression<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>
 	BuildSetter(int slotIndex, string? json)
 		{
-			var param = Expression.Parameter(typeof(SetPropertyCalls<MatchHistoryEntry>), "s");
-
-			var call = Expression.Call(
-				param,
-				nameof(SetPropertyCalls<MatchHistoryEntry>.SetProperty),
-				typeArguments: null,
-				arguments: new Expression[]
-				{
-			_slotSelectors[slotIndex],
-			Expression.Constant(json, typeof(string))
-				}
-			);
-
-			return Expression.Lambda<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>(
-				call,
-				param
-			);
+			return slotIndex switch
+			{
+				0 => s => s.SetProperty(m => m.MemberSlot0, json),
+				1 => s => s.SetProperty(m => m.MemberSlot1, json),
+				2 => s => s.SetProperty(m => m.MemberSlot2, json),
+				3 => s => s.SetProperty(m => m.MemberSlot3, json),
+				4 => s => s.SetProperty(m => m.MemberSlot4, json),
+				5 => s => s.SetProperty(m => m.MemberSlot5, json),
+				6 => s => s.SetProperty(m => m.MemberSlot6, json),
+				7 => s => s.SetProperty(m => m.MemberSlot7, json),
+				_ => throw new ArgumentOutOfRangeException(nameof(slotIndex))
+			};
 		}
 
 
@@ -270,23 +280,18 @@ namespace Database
 		private static Expression<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>
 	BuildWinnerSetter(int slotIndex, string updatedJson)
 		{
-			var param = Expression.Parameter(typeof(SetPropertyCalls<MatchHistoryEntry>), "s");
-
-			var call = Expression.Call(
-				param,
-				nameof(SetPropertyCalls<MatchHistoryEntry>.SetProperty),
-				typeArguments: null,
-				arguments: new Expression[]
-				{
-			_slotSelectors[slotIndex],
-			Expression.Constant(updatedJson, typeof(string))
-				}
-			);
-
-			return Expression.Lambda<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>(
-				call,
-				param
-			);
+			return slotIndex switch
+			{
+				0 => s => s.SetProperty(m => m.MemberSlot0, updatedJson),
+				1 => s => s.SetProperty(m => m.MemberSlot1, updatedJson),
+				2 => s => s.SetProperty(m => m.MemberSlot2, updatedJson),
+				3 => s => s.SetProperty(m => m.MemberSlot3, updatedJson),
+				4 => s => s.SetProperty(m => m.MemberSlot4, updatedJson),
+				5 => s => s.SetProperty(m => m.MemberSlot5, updatedJson),
+				6 => s => s.SetProperty(m => m.MemberSlot6, updatedJson),
+				7 => s => s.SetProperty(m => m.MemberSlot7, updatedJson),
+				_ => throw new ArgumentOutOfRangeException(nameof(slotIndex))
+			};
 		}
 
 
@@ -310,32 +315,7 @@ namespace Database
 					  .Max(m => (long?)m.MatchId)
 			);
 
-		private static readonly Func<AppDbContext, long, long, IAsyncEnumerable<MatchHistory_Entry>> _getMatchesInRange =
-	EF.CompileAsyncQuery(
-		(AppDbContext db, long startId, long endId) =>
-			db.MatchHistory
-			  .Where(m => m.MatchId >= startId &&
-						  m.MatchId <= endId &&
-						  m.Finished)
-			  .Select(m => new MatchHistory_Entry(
-				  m.MatchId,
-				  m.Owner,
-				  m.Name,
-				  m.Finished,
-				  m.Started.ToString("O"),
-				  m.TimeFinished.ToString("O"),
-				  m.MapName,
-				  m.MapPath!,
-				  m.MatchRosterType,
-				  m.MapOfficial,
-				  m.VanillaTeams,
-				  m.StartingCash,
-				  m.LimitSuperweapons,
-				  m.TrackStats,
-				  m.AllowObservers,
-				  m.MaxCamHeight
-			  ))
-	);
+
 
 		public static async Task CommitPlayerOutcome(
 	AppDbContext db,
@@ -675,36 +655,67 @@ namespace Database
 
 			try
 			{
-				await foreach (var entry in _getMatchesInRange(db, startID, endID))
+				// Single query fetches metadata + all slot columns — no concurrent reader issue.
+				var rows = await db.MatchHistory
+					.Where(m => m.MatchId >= startID && m.MatchId <= endID && m.Finished)
+					.Select(m => new
+					{
+						m.MatchId,
+						m.Owner,
+						m.Name,
+						m.Finished,
+						m.Started,
+						m.TimeFinished,
+						m.MapName,
+						m.MapPath,
+						m.MatchRosterType,
+						m.MapOfficial,
+						m.VanillaTeams,
+						m.StartingCash,
+						m.LimitSuperweapons,
+						m.TrackStats,
+						m.AllowObservers,
+						m.MaxCamHeight,
+						m.MemberSlot0,
+						m.MemberSlot1,
+						m.MemberSlot2,
+						m.MemberSlot3,
+						m.MemberSlot4,
+						m.MemberSlot5,
+						m.MemberSlot6,
+						m.MemberSlot7
+					})
+					.ToListAsync();
+
+				foreach (var row in rows)
 				{
-					// Load JSON members (optional optimization below)
-					var entity = await db.MatchHistory
-						.Where(m => m.MatchId == entry.match_id)
-						.Select(m => new
-						{
-							m.MemberSlot0,
-							m.MemberSlot1,
-							m.MemberSlot2,
-							m.MemberSlot3,
-							m.MemberSlot4,
-							m.MemberSlot5,
-							m.MemberSlot6,
-							m.MemberSlot7
-						})
-						.FirstOrDefaultAsync();
+					var entry = new MatchHistory_Entry(
+						row.MatchId,
+						row.Owner,
+						row.Name,
+						row.Finished,
+						row.Started.ToString("O"),
+						row.TimeFinished.ToString("O"),
+						row.MapName,
+						row.MapPath ?? string.Empty,
+						row.MatchRosterType,
+						row.MapOfficial,
+						row.VanillaTeams,
+						row.StartingCash,
+						row.LimitSuperweapons,
+						row.TrackStats,
+						row.AllowObservers,
+						row.MaxCamHeight
+					);
 
-						if (entity == null)
-							continue;
-
-					// Deserialize only if not null
-					AddMemberIfNotNull(entry, entity.MemberSlot0);
-					AddMemberIfNotNull(entry, entity.MemberSlot1);
-					AddMemberIfNotNull(entry, entity.MemberSlot2);
-					AddMemberIfNotNull(entry, entity.MemberSlot3);
-					AddMemberIfNotNull(entry, entity.MemberSlot4);
-					AddMemberIfNotNull(entry, entity.MemberSlot5);
-					AddMemberIfNotNull(entry, entity.MemberSlot6);
-					AddMemberIfNotNull(entry, entity.MemberSlot7);
+					AddMemberIfNotNull(entry, row.MemberSlot0);
+					AddMemberIfNotNull(entry, row.MemberSlot1);
+					AddMemberIfNotNull(entry, row.MemberSlot2);
+					AddMemberIfNotNull(entry, row.MemberSlot3);
+					AddMemberIfNotNull(entry, row.MemberSlot4);
+					AddMemberIfNotNull(entry, row.MemberSlot5);
+					AddMemberIfNotNull(entry, row.MemberSlot6);
+					AddMemberIfNotNull(entry, row.MemberSlot7);
 
 					collection.matches.Add(entry);
 				}
@@ -770,23 +781,18 @@ namespace Database
 		private static Expression<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>
 	BuildSlotSetter(int slotIndex, string updatedJson)
 		{
-			var param = Expression.Parameter(typeof(SetPropertyCalls<MatchHistoryEntry>), "s");
-
-			var call = Expression.Call(
-				param,
-				nameof(SetPropertyCalls<MatchHistoryEntry>.SetProperty),
-				typeArguments: null,
-				arguments: new Expression[]
-				{
-			_slotSelectors[slotIndex],
-			Expression.Constant(updatedJson, typeof(string))
-				}
-			);
-
-			return Expression.Lambda<Func<SetPropertyCalls<MatchHistoryEntry>, SetPropertyCalls<MatchHistoryEntry>>>(
-				call,
-				param
-			);
+			return slotIndex switch
+			{
+				0 => s => s.SetProperty(m => m.MemberSlot0, updatedJson),
+				1 => s => s.SetProperty(m => m.MemberSlot1, updatedJson),
+				2 => s => s.SetProperty(m => m.MemberSlot2, updatedJson),
+				3 => s => s.SetProperty(m => m.MemberSlot3, updatedJson),
+				4 => s => s.SetProperty(m => m.MemberSlot4, updatedJson),
+				5 => s => s.SetProperty(m => m.MemberSlot5, updatedJson),
+				6 => s => s.SetProperty(m => m.MemberSlot6, updatedJson),
+				7 => s => s.SetProperty(m => m.MemberSlot7, updatedJson),
+				_ => throw new ArgumentOutOfRangeException(nameof(slotIndex))
+			};
 		}
 
 

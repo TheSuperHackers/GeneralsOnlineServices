@@ -221,6 +221,13 @@ namespace GenOnlineService
 				// how many other sessions do they have online?
 				bool bIsFirstSessionForUser = WebSocketManager.GetAllDataFromUser(ownerID).Count == 0;
 
+				// kill any existing sessions for this user of same session type
+				if (m_dictWebsockets[sessionType].TryGetValue(ownerID, out UserWebSocketInstance? existingSession))
+				{
+					Console.WriteLine("Killing existing session for {0} ({1})", ownerID, strDisplayName);
+					await DeleteSession(ownerID, sessionType, existingSession, !bIsReconnect);
+				}
+
 				// get and cache social container
 				UserSocialContainer socialContainer = new();
 				socialContainer.Friends = await Database.Social.GetFriends(_db, ownerID);
@@ -261,13 +268,6 @@ namespace GenOnlineService
 				{
 					m_dictSharedUserData[ownerID] = new SharedUserData(ownerID, socialContainer, strDisplayName, bIsAdmin, GameStats);
 				}
-			}
-
-			// kill any existing sessions for this user of same session type
-			if (m_dictWebsockets[sessionType].TryGetValue(ownerID, out UserWebSocketInstance? existingSession))
-			{
-				Console.WriteLine("Killing existing session for {0} ({1})", ownerID, strDisplayName);
-				await DeleteSession(ownerID, sessionType, existingSession, !bIsReconnect);
 			}
 
 			// now create a websocket, we always do this whether its reconnect or not, only data is persistent
@@ -401,6 +401,11 @@ namespace GenOnlineService
 					// dont remove by ID, user could have re-opened another websocket open via reconnection, remove by instance, if its not there, thats OK, it was already closed and the new instance is a reconnect
 					var item = m_dictWebsockets[sessionType].First(kvp => kvp.Value == oldWS); // safe to lookup by sessionType here since we only ever remove old WS of the same type
 					m_dictWebsockets[sessionType].Remove(item.Key, out UserWebSocketInstance? destroyedSess);
+
+					if (destroyedSess != null)
+					{
+						destroyedSess.CloseAsync(WebSocketCloseStatus.NormalClosure, "User signed in from another point of presence [A]");
+					}
 
 					// decrement ref count on shared data
 					if (m_dictSharedUserData.TryGetValue(user_id, out SharedUserData? sharedData))
