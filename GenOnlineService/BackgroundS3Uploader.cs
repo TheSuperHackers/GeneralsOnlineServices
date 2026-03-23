@@ -198,8 +198,10 @@ static class BackgroundS3Uploader
             {
                 Console.WriteLine($"Error uploading file: {ex.Message}");
 
-                // reqeueue at the end to try again
-                BackgroundS3Uploader.QueueUpload(entry.m_uploadType, entry.m_FileData.ToArray(), entry.m_MatchID, entry.m_UserID, entry.m_slotIndexInLobby, entry.m_screenshotTypeIfScreenshot);
+				SentrySdk.CaptureException(ex);
+
+				// reqeueue at the end to try again
+				BackgroundS3Uploader.QueueUpload(entry.m_uploadType, entry.m_FileData.ToArray(), entry.m_MatchID, entry.m_UserID, entry.m_slotIndexInLobby, entry.m_screenshotTypeIfScreenshot);
                 return;
             }
         }
