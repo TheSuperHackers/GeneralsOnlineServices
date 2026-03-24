@@ -26,7 +26,7 @@ public enum ES3QueueUploadResult
 class S3QueuedUploadEntry
 {
     public ES3UploadType m_uploadType { get; init; }
-    public List<byte> m_FileData { get; init; }
+    public byte[] m_FileData { get; init; }
     public int m_slotIndexInLobby { get; init; }
     public UInt64 m_MatchID { get; init; }
     public Int64 m_UserID { get; init; }
@@ -38,7 +38,7 @@ class S3QueuedUploadEntry
     public S3QueuedUploadEntry(ES3UploadType uploadType, byte[] fileBytes, UInt64 match_id, Int64 user_id, int slotIndexInLobby, EScreenshotType screenshotTypeIfScreenshot)
     {
         m_uploadType = uploadType;
-        m_FileData = new List<byte>(fileBytes);
+        m_FileData = (byte[])fileBytes.Clone();
         m_MatchID = match_id;
         m_UserID = user_id;
         m_screenshotTypeIfScreenshot = screenshotTypeIfScreenshot;
@@ -49,6 +49,14 @@ class S3QueuedUploadEntry
 static class BackgroundS3Uploader
 {
     private static ConcurrentQueue<S3QueuedUploadEntry> m_queueUploads = new();
+
+    // Entries waiting for their retry backoff delay — kept separate so they don't block
+    // new uploads sitting behind them in the main queue.
+    private static readonly List<S3QueuedUploadEntry> m_retryList = new();
+    private static readonly object m_retryLock = new();
+
+    private static AmazonS3Client? g_S3Client = null;
+    private static readonly object m_clientLock = new();
 
     private static Int64 g_LastUpload = -1;
 
@@ -71,29 +79,46 @@ static class BackgroundS3Uploader
     {
         while (!g_bShutdownRequested)
         {
-            // do we have something to upload?
-            if (!m_queueUploads.IsEmpty)
+            try
             {
-                // If the front entry has a backoff delay, wait it out
-                if (m_queueUploads.TryPeek(out S3QueuedUploadEntry peeked) && Environment.TickCount64 < peeked.m_NextRetryTime)
+                // Move any retry entries whose backoff has expired back into the main queue.
+                lock (m_retryLock)
                 {
-                    System.Threading.Thread.Sleep(10);
-                    continue;
+                    long now = Environment.TickCount64;
+                    for (int i = m_retryList.Count - 1; i >= 0; i--)
+                    {
+                        if (m_retryList[i].m_NextRetryTime <= now)
+                        {
+                            m_queueUploads.Enqueue(m_retryList[i]);
+                            m_retryList.RemoveAt(i);
+                        }
+                    }
                 }
 
-                if (Environment.TickCount64 - g_LastUpload > 100) // max one file per 100ms
+                // do we have something to upload?
+                if (!m_queueUploads.IsEmpty)
                 {
-                    // queue the next thing
-                    if (m_queueUploads.TryDequeue(out S3QueuedUploadEntry entry))
+                    if (Environment.TickCount64 - g_LastUpload > 100) // max one file per 100ms
                     {
-                        DoUpload(entry).GetAwaiter().GetResult();
-						g_LastUpload = Environment.TickCount64;
-					}
+                        // queue the next thing
+                        if (m_queueUploads.TryDequeue(out S3QueuedUploadEntry entry))
+                        {
+                            DoUpload(entry).GetAwaiter().GetResult();
+                            g_LastUpload = Environment.TickCount64;
+                        }
+                    }
+                }
+                else
+                {
+                    // just sleep for a second
+                    System.Threading.Thread.Sleep(1000);
                 }
             }
-            else
+            catch (Exception ex)
             {
-                // just sleep for a second
+                // Never let an unexpected exception kill the upload thread.
+                Console.WriteLine($"Unexpected error in upload thread: {ex}");
+                SentrySdk.CaptureException(ex);
                 System.Threading.Thread.Sleep(1000);
             }
 
@@ -175,17 +200,28 @@ static class BackgroundS3Uploader
             // now upload
             try
             {
-                // Create S3 client with R2 endpoint
-                var config = new AmazonS3Config
+                // Reuse a single S3 client for the lifetime of the process.
+                // It is nulled out on non-throttle errors so it gets recreated if
+                // credentials rotate or the connection pool goes bad.
+                AmazonS3Client client;
+                lock (m_clientLock)
                 {
-                    ServiceURL = strS3Endpoint,
-                    ForcePathStyle = true // Required for R2
-                };
-
-                using var client = new AmazonS3Client(strS3AccessKey, strS3SecretKey, config);
+                    if (g_S3Client == null)
+                    {
+                        var s3Config = new AmazonS3Config
+                        {
+                            ServiceURL = strS3Endpoint,
+                            ForcePathStyle = true, // Required for R2
+                            Timeout = TimeSpan.FromSeconds(30),
+                            MaxErrorRetry = 0 // we handle retries ourselves
+                        };
+                        g_S3Client = new AmazonS3Client(strS3AccessKey, strS3SecretKey, s3Config);
+                    }
+                    client = g_S3Client;
+                }
 
                 // Upload file
-                using MemoryStream fileStream = new MemoryStream(entry.m_FileData.ToArray());
+                using MemoryStream fileStream = new MemoryStream(entry.m_FileData);
                 var putRequest = new PutObjectRequest
                 {
                     BucketName = strS3BucketName,
@@ -196,7 +232,7 @@ static class BackgroundS3Uploader
                 };
 
                 var response = await client.PutObjectAsync(putRequest);
-                Console.WriteLine($"SCREENSHOT uploaded successfully. {entry.m_FileData.Count} bytes. HHTTP Status Code: {response.HttpStatusCode}");
+                Console.WriteLine($"SCREENSHOT uploaded successfully. {entry.m_FileData.Length} bytes. HTTP Status Code: {response.HttpStatusCode}");
 
 				// store in DB
 				using var scope = ServiceLocator.Services.CreateScope();
@@ -229,6 +265,16 @@ static class BackgroundS3Uploader
 
                 if (isThrottled)
                     backoffMs = Math.Max(backoffMs, 30_000L);
+                else
+                {
+                    // Non-throttle failure — the client itself may be broken (bad credentials,
+                    // dead connection pool). Null it out so it gets recreated on the next attempt.
+                    lock (m_clientLock)
+                    {
+                        g_S3Client?.Dispose();
+                        g_S3Client = null;
+                    }
+                }
 
                 entry.m_NextRetryTime = Environment.TickCount64 + backoffMs;
 
@@ -242,7 +288,10 @@ static class BackgroundS3Uploader
 
     private static void RequeueEntry(S3QueuedUploadEntry entry)
     {
-        m_queueUploads.Enqueue(entry);
+        lock (m_retryLock)
+        {
+            m_retryList.Add(entry);
+        }
     }
 
     // TODO: Limit file sizes when queueing, since they could flood memory

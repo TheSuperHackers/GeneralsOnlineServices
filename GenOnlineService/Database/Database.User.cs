@@ -654,20 +654,29 @@ namespace Database
 			}
 		}
 
-		public static async Task SetDisplayName(AppDbContext db, long userId, string newName)
+		public static async Task<bool> SetDisplayName(AppDbContext db, long userId, string newName)
 		{
 			try
 			{
+				bool nameTaken = await db.Users
+					.AnyAsync(u => u.ID != userId && u.DisplayName.ToLower() == newName.ToLower());
+
+				if (nameTaken)
+					return false;
+
 				await db.Users
 					.Where(u => u.ID == userId)
 					.ExecuteUpdateAsync(setters => setters
 						.SetProperty(u => u.DisplayName, newName)
 					);
+
+				return true;
 			}
 			catch (Exception ex)
 			{
 				Console.WriteLine($"[ERROR] SetDisplayName failed: {ex.Message}");
 				SentrySdk.CaptureException(ex);
+				return false;
 			}
 		}
 

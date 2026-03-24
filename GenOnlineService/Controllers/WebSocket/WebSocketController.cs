@@ -174,7 +174,7 @@ namespace GenOnlineService.Controllers
 				}
 				catch (OperationCanceledException)
 				{
-					// No message received in 30s — send a keep-alive pong and continue waiting
+					// No message received in 30s â€” send a keep-alive pong and continue waiting
 					wsSess.SendPong();
 					continue;
 				}
@@ -484,9 +484,59 @@ namespace GenOnlineService.Controllers
 						if (nameChangeRequest.name.Length >= 3 && nameChangeRequest.name.Length <= 16)
 						{
 							await using var db = await _dbFactory.CreateDbContextAsync();
-							await Database.Users.SetDisplayName(db, sourceUserSession.m_UserID, nameChangeRequest.name);
-							sourceUserData.m_strDisplayName = nameChangeRequest.name;
-							await WebSocketManager.MarkRoomMemberListAsDirty(sourceUserSession.networkRoomID);
+							bool nameSet = await Database.Users.SetDisplayName(db, sourceUserSession.m_UserID, nameChangeRequest.name);
+							if (nameSet)
+							{
+								// response
+								WebSocketMessage_NetworkRoomChatMessageOutbound outboundMsg = new WebSocketMessage_NetworkRoomChatMessageOutbound();
+								outboundMsg.msg_id = (int)EWebSocketMessageID.NETWORK_ROOM_CHAT_FROM_SERVER;
+
+								outboundMsg.message = String.Format("[NAME CHANGE] {0} has changed their display name to {1}", sourceUserData.m_strDisplayName, nameChangeRequest.name);
+								outboundMsg.admin = false; // dont care for actions
+								outboundMsg.action = false;
+
+								// Serialize once before broadcasting
+								byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outboundMsg));
+
+								// send it to the person doing the name change and everyone in the room
+								foreach (var sessionDataByClient in WebSocketManager.GetUserDataCache())
+								{
+									foreach (var sessionData in sessionDataByClient.Value)
+									{
+										UserSession targetSess = sessionData.Value;
+										if (targetSess.networkRoomID == sourceUserSession.networkRoomID)
+										{
+											SharedUserData? targetUserSharedData = WebSocketManager.GetSharedDataForUser(targetSess.m_UserID);
+
+											if (targetUserSharedData != null)
+											{
+												// is it blocked by either side? dont deliver the chat
+												bool bBlocked = targetUserSharedData.GetSocialContainer().Blocked.Contains(sourceUserSession.m_UserID) ||
+													sourceUserData.GetSocialContainer().Blocked.Contains(targetSess.m_UserID);
+
+												if (!bBlocked)
+												{
+													targetSess.QueueWebsocketSend(bytesJSON);
+												}
+											}
+										}
+									}
+								}
+
+								sourceUserData.m_strDisplayName = nameChangeRequest.name;
+								await WebSocketManager.MarkRoomMemberListAsDirty(sourceUserSession.networkRoomID);
+							}
+							else
+							{
+								// response back to user
+								WebSocketMessage_NetworkRoomChatMessageOutbound outboundMsg = new WebSocketMessage_NetworkRoomChatMessageOutbound();
+								outboundMsg.msg_id = (int)EWebSocketMessageID.NETWORK_ROOM_CHAT_FROM_SERVER;
+								outboundMsg.message = String.Format("[NAME CHANGE] The display name you tried to set is already in use by another user ({0})", nameChangeRequest.name);
+								outboundMsg.admin = false; // dont care for actions
+								outboundMsg.action = false;
+								byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(outboundMsg));
+								sourceUserSession.QueueWebsocketSend(bytesJSON);
+							}
 						}
 					}	
 				}
