@@ -657,6 +657,87 @@ namespace Database
 
 
 
+		public static async Task<MatchHistoryCollection> GetMatchesInRange(
+	AppDbContext db, long startID, long endID)
+		{
+			MatchHistoryCollection collection = new();
+
+			try
+			{
+				// Single query fetches metadata + all slot columns — no concurrent reader issue.
+				var rows = await db.MatchHistory
+					.Where(m => m.MatchId >= startID && m.MatchId <= endID && m.Finished)
+					.Select(m => new
+					{
+						m.MatchId,
+						m.Owner,
+						m.Name,
+						m.Finished,
+						m.Started,
+						m.TimeFinished,
+						m.MapName,
+						m.MapPath,
+						m.MatchRosterType,
+						m.MapOfficial,
+						m.VanillaTeams,
+						m.StartingCash,
+						m.LimitSuperweapons,
+						m.TrackStats,
+						m.AllowObservers,
+						m.MaxCamHeight,
+						m.MemberSlot0,
+						m.MemberSlot1,
+						m.MemberSlot2,
+						m.MemberSlot3,
+						m.MemberSlot4,
+						m.MemberSlot5,
+						m.MemberSlot6,
+						m.MemberSlot7
+					})
+					.ToListAsync();
+
+				foreach (var row in rows)
+				{
+					var entry = new MatchHistory_Entry(
+						row.MatchId,
+						row.Owner,
+						row.Name,
+						row.Finished,
+						row.Started.ToString("O"),
+						row.TimeFinished.ToString("O"),
+						row.MapName,
+						row.MapPath ?? string.Empty,
+						row.MatchRosterType,
+						row.MapOfficial,
+						row.VanillaTeams,
+						row.StartingCash,
+						row.LimitSuperweapons,
+						row.TrackStats,
+						row.AllowObservers,
+						row.MaxCamHeight
+					);
+
+					AddMemberIfNotNull(entry, row.MemberSlot0);
+					AddMemberIfNotNull(entry, row.MemberSlot1);
+					AddMemberIfNotNull(entry, row.MemberSlot2);
+					AddMemberIfNotNull(entry, row.MemberSlot3);
+					AddMemberIfNotNull(entry, row.MemberSlot4);
+					AddMemberIfNotNull(entry, row.MemberSlot5);
+					AddMemberIfNotNull(entry, row.MemberSlot6);
+					AddMemberIfNotNull(entry, row.MemberSlot7);
+
+					collection.matches.Add(entry);
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetMatchesInRange failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
+
+			return collection;
+		}
+
 		public static async Task<MatchHistoryCollection> GetMatchesSince(
 	AppDbContext db, DateTime since, int maxLobbiesPerRequest)
 		{

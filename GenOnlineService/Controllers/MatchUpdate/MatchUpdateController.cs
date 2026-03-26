@@ -123,9 +123,35 @@ namespace GenOnlineService.Controllers
 			_dbFactory = dbFactory;
 		}
 
-		[HttpGet("{since}")]
+		[HttpGet("{startingMatchID}")]
 		// TODO: Move to Authorize for this
-		public async Task<APIResult> GetHistorySince([FromHeader(Name = "X-Api-Key")] string apiKey, DateTime since)
+		public async Task<APIResult> GetHistorySinceMatchID([FromHeader(Name = "X-Api-Key")] string apiKey, Int64 startingMatchID)
+		{
+			RouteHandler_Get_MatchHistory_Result result = new RouteHandler_Get_MatchHistory_Result();
+
+			if (string.IsNullOrEmpty(apiKey))
+			{
+				Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+				return result;
+			}
+
+			if (!APIKeyHelpers.ValidateKey(apiKey))
+			{
+				Response.StatusCode = (int)HttpStatusCode.Forbidden;
+				return result;
+			}
+
+			const Int64 maxLobbiesPerRequest = 99; // actually 100, but query is <= 
+
+			await using var db = await _dbFactory.CreateDbContextAsync();
+			result.matches = await Database.MatchHistory.GetMatchesInRange(db, startingMatchID, startingMatchID + maxLobbiesPerRequest);
+
+			return result;
+		}
+
+		[HttpGet("since/{since}")]
+		// TODO: Move to Authorize for this
+		public async Task<APIResult> GetHistorySinceDateTime([FromHeader(Name = "X-Api-Key")] string apiKey, DateTime since)
 		{
 			RouteHandler_Get_MatchHistory_Result result = new RouteHandler_Get_MatchHistory_Result();
 
