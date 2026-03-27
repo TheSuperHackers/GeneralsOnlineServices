@@ -202,17 +202,34 @@ namespace GenOnlineService
 				Console.WriteLine("--> WEBSOCKET RECONNECT");
 
 				// if its a reconnect, and we dont have cache OR shared data, its probably a server restart, so return null
-				if (userCacheData == null || !m_dictSharedUserData.ContainsKey(ownerID))
+				if (userCacheData == null)
 				{
 					return null;
 				}
 				else
 				{
+					// depending on what our ref count was, we MAY need to recreate our shared data
+					if (m_dictSharedUserData.TryGetValue(ownerID, out SharedUserData? sharedData))
+					{
+						// nothing to do here for shared user data, since the session was abandoned but not fully destroyed, it should still have user data
+					}
+					else
+					{
+						// get and cache social container
+						UserSocialContainer socialContainer = new();
+						socialContainer.Friends = await Database.Social.GetFriends(_db, ownerID);
+						socialContainer.PendingRequests = await Database.Social.GetPendingFriendsRequests(_db, ownerID);
+						socialContainer.Blocked = await Database.Social.GetBlocked(_db, ownerID);
+
+						// get stats
+						PlayerStats GameStats = await Database.UserStats.GetPlayerStats(_db, ownerID);
+
+						m_dictSharedUserData[ownerID] = new SharedUserData(ownerID, socialContainer, strDisplayName, bIsAdmin, GameStats);
+					}
+
 					// clear abandoned flag
 					userCacheData.MarkNotAbandoned();
 				}
-
-				// nothing to do here for shared user data, since the session was abandoned but not fully destroyed, it should still have user data
 			}
 			else
 			{
@@ -406,20 +423,6 @@ namespace GenOnlineService
 					{
 						destroyedSess.CloseAsync(WebSocketCloseStatus.NormalClosure, "User signed in from another point of presence [A]");
 					}
-
-					// decrement ref count on shared data
-					if (m_dictSharedUserData.TryGetValue(user_id, out SharedUserData? sharedData))
-					{
-						sharedData.DecrementRefCount();
-						if (sharedData.NeedsGC()) // cleanup if necessary
-						{
-							m_dictSharedUserData.Remove(user_id, out var removedSharedData);
-						}
-					}
-					else
-					{
-						Console.WriteLine("Error: Could not find shared data for user {0} when deleting session", user_id);
-					}
 				}
 				catch
 				{
@@ -430,6 +433,20 @@ namespace GenOnlineService
 			if (bShouldInvalidatePlayerCacheToBlockReconnect)
 			{
 				WebSocketManager.ClearDataFromUser(user_id, sessionType);
+
+				// decrement ref count on shared data
+				if (m_dictSharedUserData.TryGetValue(user_id, out SharedUserData? sharedData))
+				{
+					sharedData.DecrementRefCount();
+					if (sharedData.NeedsGC()) // cleanup if necessary
+					{
+						m_dictSharedUserData.Remove(user_id, out var removedSharedData);
+					}
+				}
+				else
+				{
+					Console.WriteLine("Error: Could not find shared data for user {0} when deleting session", user_id);
+				}
 			}
 			else
 			{
@@ -594,6 +611,20 @@ namespace GenOnlineService
 					userData = m_dictUserSessions[sessionType][userID];
 				}
 				await SessionHelpers.FullyDestroyPlayerSession(userID, userData, true);
+
+				// decrement ref count on shared data
+				if (m_dictSharedUserData.TryGetValue(userID, out SharedUserData? sharedData))
+				{
+					sharedData.DecrementRefCount();
+					if (sharedData.NeedsGC()) // cleanup if necessary
+					{
+						m_dictSharedUserData.Remove(userID, out var removedSharedData);
+					}
+				}
+				else
+				{
+					Console.WriteLine("Error: Could not find shared data for user {0} when deleting session", userID);
+				}
 			}
 			catch
 			{
@@ -873,7 +904,8 @@ namespace GenOnlineService
 
 		public bool IsAbandoned()
 		{
-			return m_timeAbandoned != -1;
+			UserWebSocketInstance websocketForUser = WebSocketManager.GetWebSocketForSession(this);
+			return m_timeAbandoned != -1 && websocketForUser == null;
 		}
 
 		// TODO_EFCORE: check all uses of QueueWebsocketSend, some might need to be SendToAllInstances
