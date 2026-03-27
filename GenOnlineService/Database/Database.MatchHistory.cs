@@ -382,30 +382,28 @@ namespace Database
 
 		private static string ComputeRosterType(Dictionary<int, int> playersPerTeam)
 		{
-			int noTeamCount = playersPerTeam.TryGetValue(-1, out int n) ? n : 0;
+			int noTeamCount = playersPerTeam.GetValueOrDefault(-1, 0);
 
-			var teamedGroups = playersPerTeam
+			var groups = playersPerTeam
 				.Where(kv => kv.Key != -1)
 				.Select(kv => kv.Value)
+				.Concat(Enumerable.Repeat(1, noTeamCount))
 				.OrderBy(c => c)
 				.ToList();
 
-			int activePlayers = noTeamCount + teamedGroups.Sum();
+			int activePlayers = groups.Sum();
 
-			if (activePlayers == 0)
+			if (activePlayers == 0 || groups.Count == 1)
 			{
 				return "Unknown";
 			}
 
-			bool isFFA = activePlayers > 2 &&
-						 (noTeamCount == activePlayers || teamedGroups.All(c => c == 1));
-
-			if (isFFA)
+			if (activePlayers > 2 && groups.All(c => c == 1))
 			{
 				return $"{activePlayers} Player FFA";
 			}
 
-			return string.Join("v", teamedGroups);
+			return string.Join("v", groups);
 		}
 
 
@@ -734,6 +732,92 @@ namespace Database
 			catch (Exception ex)
 			{
 				Console.WriteLine($"[ERROR] GetMatchesInRange failed: {ex.Message}");
+				SentrySdk.CaptureException(ex);
+			}
+
+			return collection;
+		}
+
+		public static async Task<MatchHistoryCollection> GetMatchesSince(
+	AppDbContext db, DateTime since, int maxLobbiesPerRequest)
+		{
+			MatchHistoryCollection collection = new();
+
+			since = DateTime.SpecifyKind(since, DateTimeKind.Utc);
+
+			try
+			{
+				// Single query fetches metadata + all slot columns — no concurrent reader issue.
+				var rows = await db.MatchHistory
+					.Where(m => m.Finished && m.TimeFinished >= since)
+					.OrderBy(m => m.TimeFinished)
+					.ThenBy(m => m.MatchId)
+					.Take(maxLobbiesPerRequest)
+					.Select(m => new
+					{
+						m.MatchId,
+						m.Owner,
+						m.Name,
+						m.Finished,
+						m.Started,
+						m.TimeFinished,
+						m.MapName,
+						m.MapPath,
+						m.MatchRosterType,
+						m.MapOfficial,
+						m.VanillaTeams,
+						m.StartingCash,
+						m.LimitSuperweapons,
+						m.TrackStats,
+						m.AllowObservers,
+						m.MaxCamHeight,
+						m.MemberSlot0,
+						m.MemberSlot1,
+						m.MemberSlot2,
+						m.MemberSlot3,
+						m.MemberSlot4,
+						m.MemberSlot5,
+						m.MemberSlot6,
+						m.MemberSlot7
+					})
+					.ToListAsync();
+
+				foreach (var row in rows)
+				{
+					var entry = new MatchHistory_Entry(
+						row.MatchId,
+						row.Owner,
+						row.Name,
+						row.Finished,
+						row.Started.ToString("O"),
+						row.TimeFinished.ToString("O"),
+						row.MapName,
+						row.MapPath ?? string.Empty,
+						row.MatchRosterType,
+						row.MapOfficial,
+						row.VanillaTeams,
+						row.StartingCash,
+						row.LimitSuperweapons,
+						row.TrackStats,
+						row.AllowObservers,
+						row.MaxCamHeight
+					);
+
+					AddMemberIfNotNull(entry, row.MemberSlot0);
+					AddMemberIfNotNull(entry, row.MemberSlot1);
+					AddMemberIfNotNull(entry, row.MemberSlot2);
+					AddMemberIfNotNull(entry, row.MemberSlot3);
+					AddMemberIfNotNull(entry, row.MemberSlot4);
+					AddMemberIfNotNull(entry, row.MemberSlot5);
+					AddMemberIfNotNull(entry, row.MemberSlot6);
+					AddMemberIfNotNull(entry, row.MemberSlot7);
+
+					collection.matches.Add(entry);
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] GetMatchesSince failed: {ex.Message}");
 				SentrySdk.CaptureException(ex);
 			}
 
