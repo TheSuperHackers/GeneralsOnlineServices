@@ -30,7 +30,7 @@ jobs:
         embed: |
           {
             "title": "🚀 Workflow Started",
-            "description": "The workflow **${{ github.workflow }}** has started.",
+            "description": "The workflow **${{ github.workflow }}** has started for **${{ matrix.os }} / ${!! matrix.arch !!} / ${{ matrix.conf }}**.",
             "color": 3447003,
             "fields": [
               { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
@@ -76,7 +76,7 @@ jobs:
         embed: |
           {
             "title": "✅ Workflow Succeeded",
-            "description": "The workflow **${{ github.workflow }}** completed successfully.",
+            "description": "The workflow **${{ github.workflow }}** for **${{ matrix.os }} / ${!! matrix.arch !!} / ${{ matrix.conf }}** completed successfully.",
             "color": 3066993,
             "fields": [
               { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
@@ -100,7 +100,7 @@ jobs:
         embed: |
           {
             "title": "❌ Workflow Failed",
-            "description": "The workflow **${{ github.workflow }}** has failed.",
+            "description": "The workflow **${{ github.workflow }}** for **${{ matrix.os }} / ${!! matrix.arch !!} / ${{ matrix.conf }}** has failed.",
             "color": 15158332,
             "fields": [
               { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
