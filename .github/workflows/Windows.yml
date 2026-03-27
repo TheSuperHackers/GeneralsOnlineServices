@@ -30,15 +30,17 @@ jobs:
         embed: |
           {
             "title": "🚀 Workflow Started",
-            "description": "The workflow **${{ github.workflow }}** has begun.",
+            "description": "The workflow **${{ github.workflow }}** has started.",
             "color": 3447003,
             "fields": [
-              { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
-              { "name": "Branch", "value": "${{ github.ref_name }}", "inline": true },
-              { "name": "Commit", "value": "${{ github.sha }}", "inline": false }
+              { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
+              { "name": "Arch", "value": "${{ matrix.arch }}", "inline": true },
+              { "name": "Config", "value": "${{ matrix.conf }}", "inline": true },
+              { "name": "Repository", "value": "${{ github.repository }}", "inline": false }
             ],
             "timestamp": "${{ github.event.head_commit.timestamp }}"
           }
+
 
     
     - name: Setup .NET
@@ -61,9 +63,9 @@ jobs:
         name: GenOnlineService_${{ matrix.os }}_${{ matrix.arch }}_${{matrix.conf}}
         path: /home/runner/work/Services/Services/GenOnlineService/bin/${{matrix.conf}}/net10.0/${{matrix.os}}-${{matrix.arch}}/publish/
 
+     # ----------------------------------------------------
+      # Notify: Success
       # ----------------------------------------------------
-    # Notify: Success (Embed)
-    # ----------------------------------------------------
     - name: Notify Discord (success)
       if: success()
       uses: appleboy/discord-action@master
@@ -77,15 +79,16 @@ jobs:
             "description": "The workflow **${{ github.workflow }}** completed successfully.",
             "color": 3066993,
             "fields": [
-              { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
-              { "name": "Branch", "value": "${{ github.ref_name }}", "inline": true },
+              { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
+              { "name": "Arch", "value": "${{ matrix.arch }}", "inline": true },
+              { "name": "Config", "value": "${{ matrix.conf }}", "inline": true },
               { "name": "Commit", "value": "${{ github.sha }}", "inline": false }
             ],
             "timestamp": "${{ github.event.head_commit.timestamp }}"
           }
 
     # ----------------------------------------------------
-    # Notify: Failure (Embed)
+    # Notify: Failure
     # ----------------------------------------------------
     - name: Notify Discord (failure)
       if: failure()
@@ -100,9 +103,11 @@ jobs:
             "description": "The workflow **${{ github.workflow }}** has failed.",
             "color": 15158332,
             "fields": [
-              { "name": "Repository", "value": "${{ github.repository }}", "inline": true },
-              { "name": "Branch", "value": "${{ github.ref_name }}", "inline": true },
+              { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
+              { "name": "Arch", "value": "${{ matrix.arch }}", "inline": true },
+              { "name": "Config", "value": "${{ matrix.conf }}", "inline": true },
               { "name": "Commit", "value": "${{ github.sha }}", "inline": false }
             ],
             "timestamp": "${{ github.event.head_commit.timestamp }}"
           }
+

@@ -17,6 +17,32 @@ jobs:
         conf: [Debug, Release]
     steps:
     - uses: actions/checkout@v4
+
+    # ----------------------------------------------------
+    # Notify: Workflow Started (Embed)
+    # ----------------------------------------------------
+    - name: Notify Discord (started)
+      uses: appleboy/discord-action@master
+      with:
+        webhook_id: ${{ secrets.DISCORD_WORKFLOW_WEBHOOK_ID }}
+        webhook_token: ${{ secrets.DISCORD_WORKFLOW_WEBHOOK_TOKEN }}
+        username: "GitHub Actions"
+        embed: |
+          {
+            "title": "🚀 Workflow Started",
+            "description": "The workflow **${{ github.workflow }}** has started.",
+            "color": 3447003,
+            "fields": [
+              { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
+              { "name": "Arch", "value": "${{ matrix.arch }}", "inline": true },
+              { "name": "Config", "value": "${{ matrix.conf }}", "inline": true },
+              { "name": "Repository", "value": "${{ github.repository }}", "inline": false }
+            ],
+            "timestamp": "${{ github.event.head_commit.timestamp }}"
+          }
+
+
+    
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
@@ -36,3 +62,52 @@ jobs:
       with:
         name: GenOnlineService_${{ matrix.os }}_${{ matrix.arch }}_${{matrix.conf}}
         path: /home/runner/work/Services/Services/GenOnlineService/bin/${{matrix.conf}}/net10.0/${{matrix.os}}-${{matrix.arch}}/publish/
+
+     # ----------------------------------------------------
+      # Notify: Success
+      # ----------------------------------------------------
+    - name: Notify Discord (success)
+      if: success()
+      uses: appleboy/discord-action@master
+      with:
+        webhook_id: ${{ secrets.DISCORD_WORKFLOW_WEBHOOK_ID }}
+        webhook_token: ${{ secrets.DISCORD_WORKFLOW_WEBHOOK_TOKEN }}
+        username: "GitHub Actions"
+        embed: |
+          {
+            "title": "✅ Workflow Succeeded",
+            "description": "The workflow **${{ github.workflow }}** completed successfully.",
+            "color": 3066993,
+            "fields": [
+              { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
+              { "name": "Arch", "value": "${{ matrix.arch }}", "inline": true },
+              { "name": "Config", "value": "${{ matrix.conf }}", "inline": true },
+              { "name": "Commit", "value": "${{ github.sha }}", "inline": false }
+            ],
+            "timestamp": "${{ github.event.head_commit.timestamp }}"
+          }
+
+    # ----------------------------------------------------
+    # Notify: Failure
+    # ----------------------------------------------------
+    - name: Notify Discord (failure)
+      if: failure()
+      uses: appleboy/discord-action@master
+      with:
+        webhook_id: ${{ secrets.DISCORD_WORKFLOW_WEBHOOK_ID }}
+        webhook_token: ${{ secrets.DISCORD_WORKFLOW_WEBHOOK_TOKEN }}
+        username: "GitHub Actions"
+        embed: |
+          {
+            "title": "❌ Workflow Failed",
+            "description": "The workflow **${{ github.workflow }}** has failed.",
+            "color": 15158332,
+            "fields": [
+              { "name": "OS", "value": "${{ matrix.os }}", "inline": true },
+              { "name": "Arch", "value": "${{ matrix.arch }}", "inline": true },
+              { "name": "Config", "value": "${{ matrix.conf }}", "inline": true },
+              { "name": "Commit", "value": "${{ github.sha }}", "inline": false }
+            ],
+            "timestamp": "${{ github.event.head_commit.timestamp }}"
+          }
+
