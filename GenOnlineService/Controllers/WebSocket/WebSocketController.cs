@@ -749,7 +749,7 @@ namespace GenOnlineService.Controllers
 									// response
 									WebSocketMessage_StartMatch startCommand = new WebSocketMessage_StartMatch();
 									startCommand.msg_id = (int)EWebSocketMessageID.START_GAME;
-									startCommand.screenshot_url = await S3CredentialManager.GetPresignedURL(EMetadataFileType.FILE_TYPE_SCREENSHOT, EScreenshotType.SCREENSHOT_TYPE_LOADSCREEN, lobbyInfo.MatchID, lobbyMember.UserID);
+									startCommand.screenshot_url = await S3CredentialManager.GetPresignedURL(EMetadataFileType.FILE_TYPE_SCREENSHOT, EScreenshotType.SCREENSHOT_TYPE_LOADSCREEN, lobbyInfo.MatchID, lobbyMember.UserID, lobbyMember.SlotIndex);
 
 									// Serialize once before broadcasting
 									byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(startCommand));

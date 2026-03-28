@@ -2033,7 +2033,7 @@ namespace GenOnlineService
 			endpoint = s3_endpoint;
 		}
 
-		public static async Task<string?> GetPresignedURL(EMetadataFileType fileType, EScreenshotType screenshotTypeIfScreenshot, UInt64 matchID, Int64 userID)
+		public static async Task<string?> GetPresignedURL(EMetadataFileType fileType, EScreenshotType screenshotTypeIfScreenshot, UInt64 matchID, Int64 userID, int slotIndex)
 		{
 			GetS3Config(out int TTL, out string access_key, out string secret_key, out string bucket_name, out string client_endpoint);
 			TimeSpan expiresIn = TimeSpan.FromMinutes(TTL);
@@ -2092,6 +2092,13 @@ namespace GenOnlineService
 				Expires = DateTime.UtcNow.Add(expiresIn),
 				ContentType = strContentType
 			};
+
+			// anytime we get an S3 uri, register the metadata
+			using var scope = ServiceLocator.Services.CreateScope();
+			var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<AppDbContext>>();
+			await using var db = await factory.CreateDbContextAsync();
+
+			await Database.MatchHistory.AttachMatchHistoryMetadata(db, matchID, slotIndex, strFileName, fileType);
 
 			return await m_s3client.GetPreSignedURLAsync(request);
 		}
