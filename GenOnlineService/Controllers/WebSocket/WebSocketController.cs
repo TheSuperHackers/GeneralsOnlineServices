@@ -737,12 +737,6 @@ namespace GenOnlineService.Controllers
 
 					// simple websocket msg, has no data, so dont even read anything
 
-					// response
-					WebSocketMessage_Simple startCommand = new WebSocketMessage_Simple();
-					startCommand.msg_id = (int)EWebSocketMessageID.START_GAME;
-
-					// Serialize once before broadcasting
-					byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(startCommand));
 
 					foreach (LobbyMember lobbyMember in lobbyInfo.Members)
 					{
@@ -752,6 +746,14 @@ namespace GenOnlineService.Controllers
 							{
 								if (sess != null)
 								{
+									// response
+									WebSocketMessage_StartMatch startCommand = new WebSocketMessage_StartMatch();
+									startCommand.msg_id = (int)EWebSocketMessageID.START_GAME;
+									startCommand.screenshot_url = await S3CredentialManager.GetPresignedURL(EMetadataFileType.FILE_TYPE_SCREENSHOT, EScreenshotType.SCREENSHOT_TYPE_LOADSCREEN, lobbyInfo.MatchID, lobbyMember.UserID);
+
+									// Serialize once before broadcasting
+									byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(startCommand));
+
 									sess.QueueWebsocketSend(bytesJSON);
 								}
 							}

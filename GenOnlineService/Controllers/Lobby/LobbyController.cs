@@ -65,6 +65,17 @@ namespace GenOnlineService.Controllers
 		public bool success { get; set; } = false;
 	}
 
+	public class RouteHandler_POST_Outcome_Result : APIResult
+	{
+		public override Type GetReturnType()
+		{
+			return this.GetType();
+		}
+
+		public string screenshot_url { get; set; } = String.Empty;
+		public string replay_url { get; set; } = String.Empty;
+	}
+
 	public class RouteHandler_Get_MatchHistory_HighestMatchID_Result : APIResult
 	{
 		public override Type GetReturnType()
@@ -265,6 +276,8 @@ namespace GenOnlineService.Controllers
 		[Authorize(Roles = "GameClient")]
 		public async Task<APIResult?> PostOutcome()
 		{
+			RouteHandler_POST_Outcome_Result result = new RouteHandler_POST_Outcome_Result();
+
 			using (var reader = new StreamReader(HttpContext.Request.Body))
 			{
 				string jsonData = await reader.ReadToEndAsync();
@@ -317,6 +330,10 @@ namespace GenOnlineService.Controllers
 								// register with daily stats
 								DailyStatsManager.RegisterOutcome(army, won);
 
+								// give them back signed URLs they need
+								result.screenshot_url = await S3CredentialManager.GetPresignedURL(EMetadataFileType.FILE_TYPE_SCREENSHOT, EScreenshotType.SCREENSHOT_TYPE_SCORESCREEN, match_id, user_id);
+								result.replay_url = await S3CredentialManager.GetPresignedURL(EMetadataFileType.FILE_TYPE_REPLAY, EScreenshotType.NONE, match_id, user_id);
+
 								// store in DB
 								await using var db = await _dbFactory.CreateDbContextAsync();
 								await Database.MatchHistory.CommitPlayerOutcome(db, slotIndexInLobby, match_id,
@@ -327,11 +344,11 @@ namespace GenOnlineService.Controllers
 				}
 				catch
 				{
-					return null;
+					return result;
 				}
 			}
 
-			return null;
+			return result;
 		}
 
 		enum ELobbyUpdatePermissions

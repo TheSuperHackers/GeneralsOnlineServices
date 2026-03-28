@@ -193,7 +193,7 @@ namespace GenOnlineService
 		public async Task SetMatchID(UInt64 a_matchID)
 		{
 #if DEBUG
-			MatchID = 123;
+			MatchID = 123456;
 #else
 			MatchID = a_matchID;
 #endif
@@ -203,7 +203,7 @@ namespace GenOnlineService
 			{
 				if (member.GetSession().TryGetTarget(out UserSession? session))
 				{
-					session.RegisterHistoricMatchID(a_matchID, member.SlotIndex, member.Side);
+					session.RegisterHistoricMatchID(MatchID, member.SlotIndex, member.Side);
 				}
 			}
 
@@ -437,7 +437,7 @@ namespace GenOnlineService
 					foreach (LobbyMember memberEntry in Members)
 					{
 						// per user endpoint
-						string? strUploadURI = S3CredentialManager.GetPresignedURL(EMetadataFileType.FILE_TYPE_SCREENSHOT, EScreenshotType.SCREENSHOT_TYPE_GAMEPLAY, MatchID, memberEntry.UserID);
+						string? strUploadURI = await S3CredentialManager.GetPresignedURL(EMetadataFileType.FILE_TYPE_SCREENSHOT, EScreenshotType.SCREENSHOT_TYPE_GAMEPLAY, MatchID, memberEntry.UserID);
 
 						if (strUploadURI != null) // should never be null really
 						{

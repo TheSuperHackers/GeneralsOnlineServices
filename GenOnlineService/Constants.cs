@@ -2033,7 +2033,7 @@ namespace GenOnlineService
 			endpoint = s3_endpoint;
 		}
 
-		public static string? GetPresignedURL(EMetadataFileType fileType, EScreenshotType screenshotTypeIfScreenshot, UInt64 matchID, Int64 userID)
+		public static async Task<string?> GetPresignedURL(EMetadataFileType fileType, EScreenshotType screenshotTypeIfScreenshot, UInt64 matchID, Int64 userID)
 		{
 			GetS3Config(out int TTL, out string access_key, out string secret_key, out string bucket_name, out string client_endpoint);
 			TimeSpan expiresIn = TimeSpan.FromMinutes(TTL);
@@ -2093,7 +2093,7 @@ namespace GenOnlineService
 				ContentType = strContentType
 			};
 
-			return m_s3client.GetPreSignedURL(request);
+			return await m_s3client.GetPreSignedURLAsync(request);
 		}
 	}
 
@@ -2480,6 +2480,11 @@ namespace GenOnlineService
 	public class WebSocketMessage_Probe : WebSocketMessage
 	{
 		public string url { get; set; } = String.Empty;
+	}
+
+	public class WebSocketMessage_StartMatch : WebSocketMessage
+	{
+		public string screenshot_url { get; set; } = String.Empty;
 	}
 
 	public abstract class WebSocketMessage
