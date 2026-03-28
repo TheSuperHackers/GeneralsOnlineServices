@@ -16,9 +16,11 @@
 **    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+using Amazon.S3;
 using Amazon.S3.Model;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.EntityFrameworkCore;
+using MySqlX.XDevAPI;
 using Org.BouncyCastle.Tls;
 using System;
 using System.Collections.Concurrent;
@@ -1944,7 +1946,6 @@ namespace GenOnlineService
 		public string m_strToken;
 	}
 
-
 	public class iceEntry
 	{
 		public List<string>? urls { get; set; } = null;
@@ -1955,6 +1956,145 @@ namespace GenOnlineService
 	public class TURNResponse
 	{
 		public List<iceEntry>? iceServers { get; set; }
+	}
+
+	public static class S3CredentialManager
+	{
+		private static AmazonS3Client m_s3client = null;
+
+		public static void Initialize()
+		{
+			GetS3Config(out int TTL, out string access_key, out string secret_key, out string bucket_name, out string client_endpoint);
+
+			var config = new AmazonS3Config
+			{
+				ServiceURL = client_endpoint,
+				ForcePathStyle = true
+			};
+
+			m_s3client = new AmazonS3Client(access_key, secret_key, config);
+		}
+
+		private static void GetS3Config(out int TTL, out string access_key, out string secret_key, out string bucket_name, out string endpoint)
+		{
+			TTL = -1;
+			access_key = String.Empty;
+			secret_key = String.Empty;
+			bucket_name = String.Empty;
+			endpoint = String.Empty;
+
+			if (Program.g_Config == null)
+			{
+				throw new Exception("Config not loaded");
+			}
+
+			IConfigurationSection? turnSettings = Program.g_Config.GetSection("MatchData");
+
+			if (turnSettings == null)
+			{
+				throw new Exception("MatchData section missing in config");
+			}
+
+			string? s3_access_key = turnSettings.GetValue<string>("s3_access_key");
+			string? s3_secret_key = turnSettings.GetValue<string>("s3_secret_key");
+			string? s3_bucket_name = turnSettings.GetValue<string>("s3_bucket_name");
+			string? s3_endpoint = turnSettings.GetValue<string>("s3_endpoint");
+			int? s3_url_ttl_minutes = turnSettings.GetValue<int>("s3_url_ttl_minutes");
+
+			if (s3_access_key == null)
+			{
+				throw new Exception("s3_access_key missing in config");
+			}
+
+			if (s3_secret_key == null)
+			{
+				throw new Exception("s3_secret_key missing in config");
+			}
+
+			if (s3_bucket_name == null)
+			{
+				throw new Exception("s3_bucket_name missing in config");
+			}
+
+			if (s3_endpoint == null)
+			{
+				throw new Exception("s3_endpoint missing in config");
+			}
+
+			if (s3_url_ttl_minutes == null)
+			{
+				throw new Exception("s3_url_ttl_minutes missing in config");
+			}
+
+			TTL = (int)s3_url_ttl_minutes;
+			access_key = s3_access_key;
+			secret_key = s3_secret_key;
+			bucket_name = s3_bucket_name;
+			endpoint = s3_endpoint;
+		}
+
+		public static string? GetPresignedURL(EMetadataFileType fileType, EScreenshotType screenshotTypeIfScreenshot, UInt64 matchID, Int64 userID)
+		{
+			GetS3Config(out int TTL, out string access_key, out string secret_key, out string bucket_name, out string client_endpoint);
+			TimeSpan expiresIn = TimeSpan.FromMinutes(TTL);
+
+			DateTime utcNow = DateTime.UtcNow;
+			int hour = utcNow.Hour;
+			int minute = utcNow.Minute;
+
+			string strPerMatchUserIDKey = Helpers.ComputeMD5Hash(String.Format("{0}_{1}", matchID, userID));
+			string strFileName = null;
+
+			string strContentType = String.Empty;
+
+
+			if (fileType == EMetadataFileType.FILE_TYPE_SCREENSHOT)
+			{
+				strContentType = "image/jpeg";
+				fileType = EMetadataFileType.FILE_TYPE_SCREENSHOT;
+
+				string screenshotTypePrefix = "screenshot";
+				if (screenshotTypeIfScreenshot == EScreenshotType.SCREENSHOT_TYPE_LOADSCREEN)
+				{
+					screenshotTypePrefix = "loadscreen";
+				}
+				else if (screenshotTypeIfScreenshot == EScreenshotType.SCREENSHOT_TYPE_GAMEPLAY)
+				{
+					screenshotTypePrefix = "gameplay";
+				}
+				else if (screenshotTypeIfScreenshot == EScreenshotType.SCREENSHOT_TYPE_SCORESCREEN)
+				{
+					screenshotTypePrefix = "scorescreen";
+				}
+
+				strFileName = String.Format("screenshot_{0}_{1}_{2}.jpg", screenshotTypePrefix, hour, minute);
+			}
+			else if (fileType == EMetadataFileType.FILE_TYPE_REPLAY)
+			{
+				strContentType = "application/octet-stream";
+				fileType = EMetadataFileType.FILE_TYPE_REPLAY;
+
+				strFileName = String.Format("match_{0}_user_{1}_replay.rep", matchID, strPerMatchUserIDKey);
+			}
+
+			if (strFileName == null)
+			{
+				return null;
+			}
+
+			string objectKey = String.Format("match_{0}/user_{1}/{2}", matchID, strPerMatchUserIDKey, strFileName);
+
+			var request = new GetPreSignedUrlRequest
+			{
+				BucketName = bucket_name,
+				Key = objectKey,
+				Verb = HttpVerb.PUT,
+				Expires = DateTime.UtcNow.Add(expiresIn),
+				ContentType = strContentType
+			};
+
+			return m_s3client.GetPreSignedURL(request);
+		}
 	}
 
 
@@ -2335,6 +2475,11 @@ namespace GenOnlineService
 	public class WebSocketMessage_Simple : WebSocketMessage
 	{
 
+	}
+
+	public class WebSocketMessage_Probe : WebSocketMessage
+	{
+		public string url { get; set; } = String.Empty;
 	}
 
 	public abstract class WebSocketMessage

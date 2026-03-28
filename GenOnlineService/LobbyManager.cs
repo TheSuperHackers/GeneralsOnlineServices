@@ -192,7 +192,11 @@ namespace GenOnlineService
 
 		public async Task SetMatchID(UInt64 a_matchID)
 		{
+#if DEBUG
+			MatchID = 123;
+#else
 			MatchID = a_matchID;
+#endif
 
 			// store on each player
 			foreach (LobbyMember member in Members)
@@ -409,6 +413,9 @@ namespace GenOnlineService
 
 		private void CalculateNextProbeTime(bool bIsFirstProbe)
 		{
+#if DEBUG
+			m_NextProbe = Environment.TickCount64 + (bIsFirstProbe ? 5000 : 30000);
+#else
 			if (bIsFirstProbe) // 30s
 			{
 				m_NextProbe = Environment.TickCount64 + 30000;
@@ -418,6 +425,7 @@ namespace GenOnlineService
 				int nextProbeInterval = Random.Shared.Next(5, 11);
 				m_NextProbe = Environment.TickCount64 + nextProbeInterval * 60000;
 			}
+#endif
 		}
 
 		public async Task Tick()
@@ -426,15 +434,22 @@ namespace GenOnlineService
 			{
 				// send probe
 				{
-					WebSocketMessage_Simple probe = new WebSocketMessage_Simple();
-					probe.msg_id = (int)EWebSocketMessageID.PROBE;
-					byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(probe));
-
 					foreach (LobbyMember memberEntry in Members)
 					{
-						if (memberEntry.GetSession().TryGetTarget(out UserSession? session))
+						// per user endpoint
+						string? strUploadURI = S3CredentialManager.GetPresignedURL(EMetadataFileType.FILE_TYPE_SCREENSHOT, EScreenshotType.SCREENSHOT_TYPE_GAMEPLAY, MatchID, memberEntry.UserID);
+
+						if (strUploadURI != null) // should never be null really
 						{
-							session.QueueWebsocketSend(bytesJSON);
+							WebSocketMessage_Probe probe = new WebSocketMessage_Probe();
+							probe.msg_id = (int)EWebSocketMessageID.PROBE;
+							probe.url = strUploadURI;
+							byte[] bytesJSON = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(probe));
+
+							if (memberEntry.GetSession().TryGetTarget(out UserSession? session))
+							{
+								session.QueueWebsocketSend(bytesJSON);
+							}
 						}
 					}
 				}

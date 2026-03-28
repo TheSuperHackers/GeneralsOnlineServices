@@ -693,6 +693,8 @@ namespace GenOnlineService
 				});
 			}
 
+			S3CredentialManager.Initialize();
+
 
 			// create discord?
 			var discordSettings = Program.g_Config.GetSection("Discord");
@@ -1054,9 +1056,6 @@ namespace GenOnlineService
 			};
 			timerCleanup.Start();
 
-			// Init background uploaded
-			BackgroundS3Uploader.Initialize();
-
 			// tick lobby
 			{
 				System.Timers.Timer timerTick = new System.Timers.Timer(5); // 5ms tick
@@ -1173,9 +1172,6 @@ namespace GenOnlineService
 			}
 
 			app.Run();
-
-			// shutdown
-			BackgroundS3Uploader.Shutdown();
 
 		}
 
