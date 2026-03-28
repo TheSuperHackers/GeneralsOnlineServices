@@ -661,6 +661,7 @@ namespace GenOnlineService
 
 			bool? sentry_enabled = sentrySettings.GetValue<bool>("enabled");
 			string? sentry_dsn = sentrySettings.GetValue<string>("dsn");
+			string? sentry_env = sentrySettings.GetValue<string>("environment");
 
 			if (sentry_enabled == null)
 			{
@@ -670,6 +671,11 @@ namespace GenOnlineService
 			if (sentry_dsn == null)
 			{
 				throw new Exception("sentry_dsn missing in config");
+			}
+
+			if (sentry_env == null)
+			{
+				sentry_env = "production";
 			}
 
 			if ((bool)sentry_enabled)
@@ -690,6 +696,8 @@ namespace GenOnlineService
 
 					// This option is recommended. It enables Sentry's "Release Health" feature.
 					options.AutoSessionTracking = true;
+
+					options.Environment = sentry_env;
 				});
 			}
 
