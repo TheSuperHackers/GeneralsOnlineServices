@@ -698,6 +698,8 @@ namespace GenOnlineService
 					options.AutoSessionTracking = true;
 
 					options.Environment = sentry_env;
+
+					options.Release = "generalsonline-services@032926";
 				});
 			}
 
