@@ -2579,8 +2579,9 @@ namespace GenOnlineService
 	public class WebSocketMessage_NetworkRoomChatMessageOutbound : WebSocketMessage
 	{
 		public string? message { get; set; }
-		public bool action { get; set; }
-		public bool admin { get; set; }
+		public bool action { get; set; } = false;
+		public bool admin { get; set; } = false;
+		public bool name_change { get; set; } = false;
 	}
 
 	public class WebSocketMessage_NetworkStartSignalling : WebSocketMessage
