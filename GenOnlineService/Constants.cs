@@ -1153,8 +1153,13 @@ namespace GenOnlineService
 					}
 					*/
 
-					using var cts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
-					cts.CancelAfter(TimeSpan.FromMilliseconds(500));
+					// Do not link to externalToken: if the parent CTS fires while the linked
+					// CTS is being disposed by the 'using' block, the parent callback fires on
+					// an already-disposed object -> ObjectDisposedException. The loop guard in
+					// TickWebsocket already checks the token, so a point-in-time check here is enough.
+					if (externalToken.IsCancellationRequested)
+						return;
+					using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
 					await m_SockInternal.SendAsync(buffer, messageType, true, cts.Token);
 				}
 				catch
@@ -1171,7 +1176,7 @@ namespace GenOnlineService
 				try
 				{
 					// dont wait forever, certain situations can cause that in ASP.NET
-					var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+					using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 					await m_SockInternal.CloseAsync(closeStatus, statusDescription, cts.Token);
 				}
 				catch
