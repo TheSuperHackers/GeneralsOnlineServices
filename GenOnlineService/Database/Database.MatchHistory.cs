@@ -315,6 +315,16 @@ namespace Database
 					  .Max(m => (long?)m.MatchId)
 			);
 
+		private static readonly Func<AppDbContext, DateTime, int, IAsyncEnumerable<MatchHistoryEntry>> _getMatchesSince =
+			EF.CompileAsyncQuery(
+				(AppDbContext db, DateTime since, int maxLobbiesPerRequest) =>
+					db.MatchHistory
+					  .Where(m => m.Finished && m.TimeFinished >= since)
+					  .OrderBy(m => m.TimeFinished)
+					  .ThenBy(m => m.MatchId)
+					  .Take(maxLobbiesPerRequest)
+			);
+
 
 
 		public static async Task CommitPlayerOutcome(
@@ -748,41 +758,7 @@ namespace Database
 			try
 			{
 				// Single query fetches metadata + all slot columns — no concurrent reader issue.
-				var rows = await db.MatchHistory
-					.Where(m => m.Finished && m.TimeFinished >= since)
-					.OrderBy(m => m.TimeFinished)
-					.ThenBy(m => m.MatchId)
-					.Take(maxLobbiesPerRequest)
-					.Select(m => new
-					{
-						m.MatchId,
-						m.Owner,
-						m.Name,
-						m.Finished,
-						m.Started,
-						m.TimeFinished,
-						m.MapName,
-						m.MapPath,
-						m.MatchRosterType,
-						m.MapOfficial,
-						m.VanillaTeams,
-						m.StartingCash,
-						m.LimitSuperweapons,
-						m.TrackStats,
-						m.AllowObservers,
-						m.MaxCamHeight,
-						m.MemberSlot0,
-						m.MemberSlot1,
-						m.MemberSlot2,
-						m.MemberSlot3,
-						m.MemberSlot4,
-						m.MemberSlot5,
-						m.MemberSlot6,
-						m.MemberSlot7
-					})
-					.ToListAsync();
-
-				foreach (var row in rows)
+				await foreach (var row in _getMatchesSince(db, since, maxLobbiesPerRequest))
 				{
 					var entry = new MatchHistory_Entry(
 						row.MatchId,
