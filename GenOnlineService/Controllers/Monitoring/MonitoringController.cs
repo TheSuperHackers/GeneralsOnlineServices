@@ -78,6 +78,17 @@ namespace GenOnlineService.Controllers
 		public List<GET_ActiveUsers_UserEntry> active_users { get; set; } = new();
 	}
 
+	public class GET_BasicStats_Result : APIResult
+	{
+		public override Type GetReturnType()
+		{
+			return typeof(GET_BasicStats_Result);
+		}
+
+		public int players { get; set; } = new();
+		public int lobbies { get; set; } = new();
+	}
+
 	public class GET_MyUser_Result : APIResult
 	{
 		public override Type GetReturnType()
@@ -148,6 +159,20 @@ namespace GenOnlineService.Controllers
 				}
 			}
 
+
+			return result;
+		}
+
+		[Route("BasicStats")]
+		[HttpGet]
+		public APIResult Monitor_BaicStats()
+		{
+			GET_BasicStats_Result result = new GET_BasicStats_Result();
+
+			var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+
+			result.players = GenOnlineService.WebSocketManager.GetNumberOfUsersOnline();
+			result.lobbies = lobbyManager.GetNumLobbies();
 
 			return result;
 		}
