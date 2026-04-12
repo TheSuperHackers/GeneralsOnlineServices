@@ -54,6 +54,13 @@ namespace GenOnlineService.Controllers
 		public Int64 patcher_size { get; set; } = 0;
 	}
 
+	public class GET_VersionManifest_Result : APIResult
+	{
+		public override Type GetReturnType() { return typeof(GET_VersionManifest_Result); }
+		public UInt32 execrc_30 { get; set; } = 0;
+		public UInt32 execrc_60 { get; set; } = 0;
+	}
+
 	// legacy version checker
 	[ApiController]
 	[Route("/cloud/env:prod/VersionCheck")]
@@ -108,8 +115,39 @@ namespace GenOnlineService.Controllers
 		}
 	}
 
+	[ApiController]
+	[Route("env/{environment}/contract/{contract_version}/[controller]")]
+	public class VersionManifestController : ControllerBase
+	{
+		[HttpGet(Name = "GetVersionManifest")]
+		public async Task<APIResult> Get()
+		{
+			return await Task.FromResult(VersionHelper.Get_ManifestHandler());
+		}
+	}
+
 	class VersionHelper
 	{
+		public static APIResult Get_ManifestHandler()
+		{
+			GET_VersionManifest_Result manifest = new GET_VersionManifest_Result();
+#if DEBUG
+			manifest.execrc_30 = 0;
+			manifest.execrc_60 = 0;
+#else
+			try
+			{
+				manifest.execrc_30 = CRC32Calculator.CalculateCRC32(Path.Combine(Directory.GetCurrentDirectory(), "crcfiles", "GeneralsOnlineZH_30.exe"));
+				manifest.execrc_60 = CRC32Calculator.CalculateCRC32(Path.Combine(Directory.GetCurrentDirectory(), "crcfiles", "GeneralsOnlineZH_60.exe"));
+			}
+			catch (Exception)
+			{
+				// Keep default 0 values on failure
+			}
+#endif
+			return manifest;
+		}
+
 #if !DEBUG
 		public static async Task<APIResult> Post_InternalHandler(string jsonData)
 #else
