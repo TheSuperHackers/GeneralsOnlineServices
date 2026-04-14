@@ -231,6 +231,14 @@ namespace GenOnlineService
 
 					// clear abandoned flag
 					userCacheData.MarkNotAbandoned();
+
+					// NOTE: We intentionally do NOT call ClearPlayerIngameAbandon on reconnect.
+					// RecordPlayerIngameAbandon only stores the FIRST disconnect time.  Clearing
+					// it here was the root cause of the wrong-winner ELO bug:
+					//   A kills game → RecordPlayerIngameAbandon(A) set
+					//   A relaunches and reconnects → ClearPlayerIngameAbandon(A) wipes the record
+					//   Fallback uses TimeMemberLeft[A] (set much later) > IngameAbandon[B]
+					//   → A incorrectly wins
 				}
 			}
 			else
@@ -404,7 +412,7 @@ namespace GenOnlineService
 
 			foreach (Tuple<Int64, EUserSessionType> userData in lstCacheEntriesToDestroy)
 			{
-				ClearDataFromUser(userData.Item1, userData.Item2);
+				await ClearDataFromUser(userData.Item1, userData.Item2);
 			}
 		}
 
@@ -456,6 +464,39 @@ namespace GenOnlineService
 				if (sourceData != null)
 				{
 					sourceData.MarkAbandoned();
+
+					// If the player was in an active game when their connection dropped, record the
+					// abandon time NOW (before any lobby-structure cleanup runs).  This timestamp is
+					// the authoritative "who quit first" signal used by DetermineLobbyWinnerIfNotPresent,
+					// and must be captured here rather than in RemoveMember, because RemoveMember may
+					// execute much later (e.g. 30 s after the first abandonment) or at an unexpected
+					// time (e.g. when the other player reconnects with a fresh session and their old
+					// session is forcibly evicted, causing them to appear as "last to leave" even
+					// though they stayed in the game longer than the opponent who quit first).
+					try
+					{
+						var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
+						if (sourceData.currentLobbyID != -1)
+						{
+							Lobby? ingameLobby = lobbyManager.GetLobby(sourceData.currentLobbyID);
+							if (ingameLobby != null && ingameLobby.State == ELobbyState.INGAME)
+							{
+								ingameLobby.RecordPlayerIngameAbandon(user_id);
+							}
+							else
+							{
+								Console.WriteLine($"[WARN] DeleteSession(false): skipped RecordPlayerIngameAbandon for user {user_id} — lobby={sourceData.currentLobbyID} found={ingameLobby != null} state={ingameLobby?.State}");
+							}
+						}
+						else
+						{
+							Console.WriteLine($"[WARN] DeleteSession(false): skipped RecordPlayerIngameAbandon for user {user_id} — currentLobbyID==-1 (session has no lobby)");
+						}
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine($"[WARN] Failed to record in-game abandon for user {user_id}: {ex.Message}");
+					}
 				}
 			}
 
@@ -1232,8 +1273,7 @@ namespace GenOnlineService
 			Console.WriteLine("[Source 2] User {0} Leave Any Lobby", user_id);
 
 			var lobbyManager = ServiceLocator.Services.GetRequiredService<LobbyManager>();
-			lobbyManager.LeaveAnyLobby(user_id);
-
+			await lobbyManager.LeaveAnyLobby(user_id);
 
 			await lobbyManager.CleanupUserLobbiesNotStarted(user_id);
 

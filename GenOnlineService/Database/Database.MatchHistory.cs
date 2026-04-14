@@ -578,8 +578,17 @@ namespace Database
 					return;
 				}
 
-				// 5. No winner — pick last player to leave
-				DateTime latestLeave = DateTime.UnixEpoch;
+				// 5. No winner — determine who quit last (= winner) using the most accurate timing available.
+				//    Prefer TimePlayerAbandonedIngame (recorded the instant each player's WS dropped while
+				//    in-game) over TimeMemberLeft (recorded when the player was structurally removed from the
+				//    lobby, which can happen much later, or earlier due to a fresh-session reconnect, skewing
+				//    the order relative to the actual in-game quit order).
+				Console.WriteLine($"[WinnerDet] Match={lobby.MatchID} LobbyID={lobby.LobbyID}: no winner in DB — timestamp fallback. IngameAbandon={lobby.TimePlayerAbandonedIngame.Count} MemberLeft={lobby.TimeMemberLeft.Count}");
+				foreach (var _kv in lobby.TimePlayerAbandonedIngame)
+					Console.WriteLine($"[WinnerDet]   IngameAbandon: user={_kv.Key} at={_kv.Value:O}");
+				foreach (var _kv in lobby.TimeMemberLeft)
+					Console.WriteLine($"[WinnerDet]   MemberLeft:    user={_kv.Key} at={_kv.Value:O}");
+				DateTime latestLeave = DateTime.MinValue;
 				MatchdataMemberModel? lastPlayerNullable = null;
 				int lastSlot = -1;
 
@@ -587,22 +596,45 @@ namespace Database
 				{
 					var model = kv.Value;
 
-					if (lobby.TimeMemberLeft.TryGetValue(model.user_id, out DateTime leftAt))
+					// Skip observer slots (side == -2) and AI/placeholder slots (user_id <= 0);
+					// they never quit the game and must not be selected as "last to leave = winner".
+					if (model.side == -2 || model.user_id <= 0)
+						continue;
+
+					DateTime abandonTime = DateTime.MinValue;
+					string abandonSource = "none";
+
+					// Use the in-game abandon timestamp if available (most accurate).
+					if (lobby.TimePlayerAbandonedIngame.TryGetValue(model.user_id, out DateTime ingameAbandon))
 					{
-						if (leftAt >= latestLeave)
-						{
-							latestLeave = leftAt;
-							lastPlayerNullable = model;
-							lastSlot = kv.Key;
-						}
+						abandonTime = ingameAbandon;
+						abandonSource = "IngameAbandon";
+					}
+					else if (lobby.TimeMemberLeft.TryGetValue(model.user_id, out DateTime leftAt) && leftAt > DateTime.UnixEpoch)
+					{
+						// Fall back to lobby-removal time only if we have no in-game abandon record.
+						abandonTime = leftAt;
+						abandonSource = "MemberLeft";
+					}
+
+					Console.WriteLine($"[WinnerDet]   Slot={kv.Key} user={model.user_id} side={model.side} team={model.team} time={abandonTime:O} src={abandonSource}");
+					if (abandonTime > latestLeave)
+					{
+						latestLeave = abandonTime;
+						lastPlayerNullable = model;
+						lastSlot = kv.Key;
 					}
 				}
 
 				if (lastPlayerNullable == null)
+				{
+					Console.WriteLine($"[WinnerDet] Match={lobby.MatchID}: no valid abandon timestamps found — skipping winner assignment.");
 					return;
+				}
 
 				MatchdataMemberModel lastPlayer = lastPlayerNullable.Value;
 				int winningTeam = lastPlayer.team;
+				Console.WriteLine($"[WinnerDet] Match={lobby.MatchID}: winner selected → user={lastPlayer.user_id} slot={lastSlot} team={winningTeam} at={latestLeave:O}");
 
 				// 6. Mark last player + teammates as winners
 				foreach (var kv in members)
@@ -612,6 +644,7 @@ namespace Database
 					if (model.user_id == lastPlayer.user_id ||
 						(winningTeam != -1 && model.team == winningTeam))
 					{
+						Console.WriteLine($"[WinnerDet] Match={lobby.MatchID}: marking slot={kv.Key} user={model.user_id} as WINNER.");
 						await UpdateMatchHistoryMakeWinner(db, lobby.MatchID, kv.Key);
 					}
 				}
@@ -954,7 +987,14 @@ namespace Database
 				{
 					MatchdataMemberModel? model = JsonSerializer.Deserialize<MatchdataMemberModel?>(slots[i]!);
 					if (model != null)
+					{
+						// Exclude observer slots (side == -2) and AI/placeholder slots (user_id <= 0)
+						// from ELO calculations — only real human players are ranked.
+						if (model.Value.side == -2 || model.Value.user_id <= 0)
+							continue;
+
 						list.Add(model.Value);
+					}
 				}
 			}
 
@@ -982,6 +1022,7 @@ namespace Database
 					if (a.user_id >= b.user_id)
 						continue;
 
+					Console.WriteLine($"[ELO] Pairing a={a.user_id}(won={a.won}) vs b={b.user_id}(won={b.won}) → result={(a.won ? "PlayerAWins" : "PlayerBWins")}");
 					ref EloData A = ref CollectionsMarshal.GetValueRefOrAddDefault(
 						dictElo, a.user_id, out _);
 

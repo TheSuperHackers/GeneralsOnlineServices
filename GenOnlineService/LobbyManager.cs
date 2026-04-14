@@ -281,6 +281,40 @@ namespace GenOnlineService
 		[JsonIgnore]
 		public Dictionary<Int64, DateTime> TimeMemberLeft { get; private set; } = new();
 
+		// Records the first time each player's in-game WebSocket connection dropped (i.e., when they first "quit"
+		// while the match was in progress). Only the first disconnect is stored — reconnects do not reset it.
+		// Used by DetermineLobbyWinnerIfNotPresent to find who abandoned first (= loser) vs last (= winner).
+		[JsonIgnore]
+		public Dictionary<Int64, DateTime> TimePlayerAbandonedIngame { get; private set; } = new();
+
+		/// <summary>
+		/// Records the moment a player's WebSocket dropped while the lobby was in INGAME state.
+		/// Only the FIRST disconnect is stored; subsequent reconnect/disconnect cycles are ignored
+		/// so that a player who briefly loses connection is not penalised more than the player who
+		/// intentionally killed the game first.
+		/// </summary>
+		public void RecordPlayerIngameAbandon(Int64 userId)
+		{
+			if (!TimePlayerAbandonedIngame.ContainsKey(userId))
+			{
+				TimePlayerAbandonedIngame[userId] = DateTime.UtcNow;
+				Console.WriteLine("[Lobby {0}] Recorded in-game abandon for user {1} at {2:O}", LobbyID, userId, TimePlayerAbandonedIngame[userId]);
+
+			}
+		}
+
+		/// <summary>
+		/// Removes the in-game abandon timestamp for a player who successfully reconnected.
+		/// This ensures a future disconnect records the correct (later) quit time.
+		/// </summary>
+		public void ClearPlayerIngameAbandon(Int64 userId)
+		{
+			if (TimePlayerAbandonedIngame.Remove(userId))
+			{
+				Console.WriteLine("[Lobby {0}] Cleared in-game abandon record for reconnected user {1}", LobbyID, userId);
+			}
+		}
+
 
 		private bool m_bIsDirty = false;
 
@@ -357,7 +391,11 @@ namespace GenOnlineService
 			}
 			else
 			{
-				if (bNeedsHostMigrate)
+				// Host migration is only meaningful in the lobby setup phase.
+				// During an active game the P2P host is determined by the game engine,
+				// and migrating the server-side owner causes confusing mid-game lobby
+				// state broadcasts to surviving clients.
+				if (bNeedsHostMigrate && State != ELobbyState.INGAME)
 				{
 					DoHostMigration();
 				}
@@ -682,7 +720,7 @@ namespace GenOnlineService
 
 			LobbyMember placeholderMember = new LobbyMember(this, null, -1, String.Empty, String.Empty, 0, -1, -1, -1, EPlayerType.SLOT_OPEN, member.SlotIndex, true);
 			Members[member.SlotIndex] = placeholderMember;
-			TimeMemberLeft[UserID] = DateTime.Now;
+			TimeMemberLeft[UserID] = DateTime.UtcNow;
 
 			// send signal to disconnect (only if not ingame, ingame we let the client handle it so a service disconnect doesnt end the game)
 			if (State != ELobbyState.INGAME)
